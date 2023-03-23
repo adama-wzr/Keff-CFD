@@ -1,6 +1,6 @@
 # include "keff2D.h"
 
-#define IMG_SIZE 128
+#define IMG_SIZE 10
 #define ITER_LIMIT 500000
 #define CONVERGE  0.000001
 
@@ -48,20 +48,20 @@ int main(int argc, char const *argv[])
 
 	char filename[30];
 
-	sprintf(filename, "00001.jpg");
+	sprintf(filename, "p01.jpg");
 
 	// Call function to read the image:
 
-	readImage(target_data, &width, &height, &channel, filename);
+	readImage(&target_data, &width, &height, &channel, filename);
 
 	// Print if successful
 
+	std::cout << "width = " << width << " height = " << height << " channel = " << channel << std::endl;
+
 	if (channel != 1){
-		printf("Error: please enter a grascale image with 1 channel.\n Current image Number of Channels = %d", channel);
+		printf("Error: please enter a grascale image with 1 channel.\n Current number of channels = %d\n", channel);
 		return 1;
 	}
-
-	std::cout << "width = " << width << " height = " << height << " channel = " << channel << std::endl;
 
 	// Define mesh related variables:
 
@@ -84,8 +84,7 @@ int main(int argc, char const *argv[])
 	double *xCenters = (double *)malloc(sizeof(double)*numCellsX);
 	double *yCenters = (double *)malloc(sizeof(double)*numCellsY);
 
-
-	#pragma omp parallel for schedule(auto)
+	// #pragma omp parallel for schedule(auto)
 	for(int i = 0; i<numCellsX; i++){
 		xCenters[i] = (double)i*(1.0/numCellsX) + 0.5*(1.0/numCellsX);
 	}
@@ -111,19 +110,65 @@ int main(int argc, char const *argv[])
 			int targetIndex_Row = i/AmpFactorY;
 			int targetIndex_Col = j/AmpFactorX;
 			if(target_data[targetIndex_Row*width + targetIndex_Col] < 150){
-				k[i*numCellsX + j] = kFluid; 			// black => fluid => 0 => void
+				kMatrix[i*numCellsX + j] = kFluid; 			// black => fluid => 0 => void
 			} else{
-				k[i*numCellsX + j] = kSolid;			// white => solid => 1 => material
+				kMatrix[i*numCellsX + j] = kSolid;			// white => solid => 1 => material
 			}
 		}
 	}
+
+	// FILE *DISC_MATRIX;
+	// DISC_MATRIX = fopen("K_New.csv","w");
+
+	// for(int i = 0; i<numCellsY; i++){
+	// 	if(i !=0 ){
+	// 		fprintf(DISC_MATRIX, "\n");
+	// 	}
+	// 	for(int j = 0; j<numCellsX; j++){
+	// 		fprintf(DISC_MATRIX, "%d,", kMatrix[i*numCellsX + j]);
+	// 	}
+	// }
+
+	// fclose(DISC_MATRIX);
 	
 	// Get number of elements for coefficient matrix, create more useful arrays for solution
 
 	double *CoeffMatrix = (double *)malloc(sizeof(double)*numCellsY*numCellsX*5); 		// Only store 5 diagonals
 	double *TemperatureDist = (double *)malloc(sizeof(double)*numCellsY*numCellsX);
 	double *RHS = (double *)malloc(sizeof(double)*numCellsY*numCellsX);
-	
+
+	// Discretize
+
+	DiscretizeMatrixCD2D(kMatrix, numCellsY, numCellsX, CoeffMatrix, RHS, TL, TR, xCenters, yCenters);
+
+	// Solve
+
+	JacobiIteration(CoeffMatrix, RHS, TemperatureDist, (int) ITER_LIMIT, (double) CONVERGE, 10);
+
+	//
+
+	for (int j = 0; j<width; j++){
+		QL[j] = kMatrix[j*width]*(2)*(TemperatureDist[j*width]-TL);
+		QR[j] = kMatrix[(j+1)*width - 1]*(2)*(TR - TemperatureDist[(j+1)*width-1]);
+	}
+
+	double Q1 = 0;
+	double Q2 = 0;
+
+	for(int i =0; i<width; i++){
+		Q1 += QL[i];
+		Q2 += QR[i];
+	}
+
+	Q1 = Q1/width;
+	Q2 = Q2/width;
+
+	double Q_avg = (Q2 + Q1)/2;
+
+	double k_eff = Q_avg*width/(TR-TL);
+
+	printf("Keff = %f\n", k_eff);
+
 
 	return 0;
 }
