@@ -116,20 +116,6 @@ int main(int argc, char const *argv[])
 			}
 		}
 	}
-
-	// FILE *DISC_MATRIX;
-	// DISC_MATRIX = fopen("K_New.csv","w");
-
-	// for(int i = 0; i<numCellsY; i++){
-	// 	if(i !=0 ){
-	// 		fprintf(DISC_MATRIX, "\n");
-	// 	}
-	// 	for(int j = 0; j<numCellsX; j++){
-	// 		fprintf(DISC_MATRIX, "%d,", kMatrix[i*numCellsX + j]);
-	// 	}
-	// }
-
-	// fclose(DISC_MATRIX);
 	
 	// Get number of elements for coefficient matrix, create more useful arrays for solution
 
