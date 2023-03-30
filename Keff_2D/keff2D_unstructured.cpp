@@ -1,8 +1,7 @@
 # include "keff2D.h"
 
-#define IMG_SIZE 10
-#define ITER_LIMIT 500000
-#define CONVERGE  0.000001
+#define ITER_LIMIT 100000
+#define CONVERGE  0.0001
 
 int main(int argc, char const *argv[])
 {
@@ -33,7 +32,7 @@ int main(int argc, char const *argv[])
 	// Initialize domain variables
 
 	double kFluid = 1;
-	double kSolid = 10.0;
+	double kSolid = 10.;
 
 	double TL = 0;
 	double TR = 1;
@@ -48,7 +47,7 @@ int main(int argc, char const *argv[])
 
 	char filename[30];
 
-	sprintf(filename, "p01.jpg");
+	sprintf(filename, "p05.jpg");
 
 	// Call function to read the image:
 
@@ -68,8 +67,8 @@ int main(int argc, char const *argv[])
 	bool structuredMesh = true;
 
 	// Define amplification factors for mesh resolution
-	int AmpFactorX = 1;
-	int AmpFactorY = 1;
+	int AmpFactorX = 10;
+	int AmpFactorY = 5;
 
 	if (AmpFactorX < 1 || AmpFactorY < 1){
 		printf("Feature not currently available, variable has to be integer larger than 1.\n");
@@ -127,33 +126,48 @@ int main(int argc, char const *argv[])
 
 	DiscretizeMatrixCD2D(kMatrix, numCellsY, numCellsX, CoeffMatrix, RHS, TL, TR, xCenters, yCenters);
 
+	// Initialize x-vector
+
+	for (int i = 0; i< numCellsY; i++){
+		for(int j = 0; j<numCellsX; j++){
+			double a = (double)1.0/numCellsX;
+			TemperatureDist[i*numCellsX + j] = (double)a*j;
+		}
+	}
+
 	// Solve
 
-	JacobiIteration(CoeffMatrix, RHS, TemperatureDist, (int) ITER_LIMIT, (double) CONVERGE, 10);
+	int iterTaken = 0;
+
+	iterTaken = TDMAscanner(CoeffMatrix, RHS, TemperatureDist, (int) ITER_LIMIT, (double) CONVERGE, numCellsX, numCellsY, QR, QL,
+	TR, TL, kMatrix, xCenters, yCenters);
 
 	//
-
-	for (int j = 0; j<width; j++){
-		QL[j] = kMatrix[j*width]*(2)*(TemperatureDist[j*width]-TL);
-		QR[j] = kMatrix[(j+1)*width - 1]*(2)*(TR - TemperatureDist[(j+1)*width-1]);
+	double dy = yCenters[0]*2;
+	for (int j = 0; j<numCellsY; j++){
+		QL[j] = kMatrix[j*numCellsX]*dy*(TemperatureDist[j*numCellsX]-TL)/(xCenters[0]);
+		QR[j] = kMatrix[(j+1)*numCellsX - 1]*dy*(TR - TemperatureDist[(j+1)*numCellsX-1])/(1-xCenters[numCellsX-1]);
 	}
 
 	double Q1 = 0;
 	double Q2 = 0;
 
-	for(int i =0; i<width; i++){
+	for(int i =0; i<numCellsY; i++){
 		Q1 += QL[i];
 		Q2 += QR[i];
 	}
 
-	Q1 = Q1/width;
-	Q2 = Q2/width;
+	Q1 = Q1;
+	Q2 = Q2;
 
 	double Q_avg = (Q2 + Q1)/2;
 
-	double k_eff = Q_avg*width/(TR-TL);
+	double k_eff = Q_avg/(TR-TL);
 
-	printf("Keff = %f\n", k_eff);
+	printf("Keff = %f, iterTaken = %d\n", k_eff, iterTaken);
+	run_time = omp_get_wtime() - start_time;
+
+    printf("Time spent = %lf\n", run_time);
 
 
 	return 0;

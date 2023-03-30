@@ -196,3 +196,178 @@ int JacobiIteration(double *arr, double *sol, double *x_vec, int iter_limit, dou
 	free(temp_x_vec);
 	return iteration_count;
 }
+
+int TDMA(int n, double *A, double *b, double *x, int rowNumber){
+	/*
+	Function TDMA:
+	Inputs:
+		- n, integer: size of matrix A (nxn)
+		- *A: pointer to the A matrix on a Ax = b system.
+		- *b: pointer to the RHS of the system, b, in Ax=b
+		- *x: pointer the values to be modifyed in the Ax = b system.
+		- rowNumber: number of the current row being solver.
+
+	Outputs: None
+
+	Function uses the Thomas algorithm or TriDiagonal matrix algorithm
+	to solve for x in the Ax = b system
+	*/
+	double m;
+
+	// with this method, solution is direct.
+	// Analogous to Gaussian Elimination, but only with 3 diagonals.
+
+	for(int i = 1; i<n; i++){
+		m = A[i*n + i - 1]/A[(i-1)*n + i - 1];
+		A[i*n + i] = A[i*n + i] - m*A[(i-1)*n + i];
+		b[i] -= m*b[i-1];
+	}
+
+	// The solution to the last value of x is simply b[n]/A[n,n]
+	// but with the indexing starting at 0
+	x[rowNumber*n + n-1] = b[n-1]/A[n*n - 1];
+
+	// now work the way back through the indexes solving it.
+	// Remember A is a upper triangular matrix at this stage.
+
+	for(int i = n-2; i >= 0; i--){
+		x[rowNumber*n + i] = (b[i] - A[i*n + i + 1]*x[rowNumber*n + i + 1])/A[i*n + i];
+	}
+
+	return 0;
+}
+
+
+int TDMAscanner(double *A, double *b, double *X, int maxIter, double Threshold, int numCols, int numRows, double *qR, double *qL,
+	double tR, double tL, double *K, double *XC, double *YC){
+
+	/*
+	Function TDMAscanner:
+	Inputs:
+		- *A: pointer to the discretization matrix, size (numCols*numRows, 5)
+		- *b: pointert to the RHS, size (numCols*numRows)
+		- *X: pointer to the solution vector, size (numCols*numRows)
+		- maxIter: integer with the maximum number of allowed iterations
+		- Threshold: value of convergence criteria
+		- numCols: numCols of the domain
+		- numRows: numRows of the domain
+		- *qR: pointer a vector of size (numRows) containing heat flux from each cell
+			at the right side of the domain.
+		- *qL: pointer a vector of size (numRows) containing heat flux from each cell
+			at the left side of the domain.
+		- tR: temperature in the right boundary.
+		- tL: temperature in the left boundary.
+		- *K: vector containing the thermal conductivity of each cell in the domain.
+		- *XC: pointer to vector containing the x-coordinate of the center of each cell (length numCols)
+		- *YC: pointer to vector containing the y-coordinate of the center of each cell (length numRows)
+
+	Outputs: None
+
+	Function extends the functionality of the regular TDMA to 5 diagonal systems, using 
+	the iterative TDMA algorithm. Basically it scans one row at a time, taken the others as knowns.
+	Modifies the vector X.
+
+	*/
+
+	// Create TDMA_A and TDMA_b matrices to be modified by the TDMA function, subsets of the
+	// entire A and b system.
+
+	double *TDMA_A = (double *)malloc(sizeof(double)*numCols*numCols);
+	double *TDMA_b = (double *)malloc(sizeof(double)*numCols);
+
+	// initialize to 0
+
+	for(int i = 0; i<numCols; i++){
+		TDMA_b[i] = 0;
+		for(int j = 0; j<numCols; j++){
+			TDMA_A[i*numCols + j] = 0;
+		}
+	}
+
+	// Create 3 vectors to store and modify the values that will become part of TDMA_A and TDMA_b
+
+	double *upperDiag = (double *)malloc(sizeof(double)*(numCols-1));
+	double *lowerDiag = (double *)malloc(sizeof(double)*(numCols-1));
+	double *mainDiag = (double *)malloc(sizeof(double)*(numCols));
+
+	// more helper variables
+
+	int iterCount = 0;
+	double keffOld = 1;
+	double keffNew = 1;
+	int iterToCheck = 500;
+	double qAvg = 0;
+	double Q1 = 0;
+	double Q2 = 0;
+
+	double percentChange = 100;
+
+	while(iterCount < maxIter && Threshold < percentChange){
+		for(int i = 0; i<numRows; i++){
+			for(int j = 0; j<numCols; j++){
+				if(j == 0){ // no lower diagonal
+					upperDiag[j] = A[(i)*numCols*5 + j*5 + 2];
+					mainDiag[j] = A[(i)*numCols*5 + j*5 + 0];
+					TDMA_A[j*numCols + j] = mainDiag[j];
+					TDMA_A[j*numCols + j + 1] = upperDiag[j];
+					TDMA_b[j] = b[i*numCols + j];
+				}else if(j == numCols-1){ 	// no upper diagonal
+					lowerDiag[j-1] = A[i*numCols*5 + j*5 + 1];
+					mainDiag[j] = A[i*numCols*5 + j*5 + 0];
+					TDMA_A[j*numCols + j] = mainDiag[j];
+					TDMA_A[j*numCols + j - 1] = lowerDiag[j-1];
+					TDMA_b[j] = b[i*numCols + j]; 
+				} else{
+					lowerDiag[j-1] = A[i*numCols*5 + j*5 + 1];
+					mainDiag[j] = A[i*numCols*5 + j*5 + 0];
+					upperDiag[j] = A[(i)*numCols*5 + j*5 + 2];
+					TDMA_A[j*numCols + j] = mainDiag[j];
+					TDMA_A[j*numCols + j + 1] = upperDiag[j];
+					TDMA_A[j*numCols + j - 1] = lowerDiag[j-1];
+					TDMA_b[j] = b[i*numCols + j];
+				}
+			}
+
+			for(int j = 0; j<numCols; j++){
+				if(i == 0){
+					TDMA_b[j] -= A[i*numCols*5 + j*5 + 3]*X[(i+1)*numCols + j];
+				} else if(i == numRows - 1){
+					TDMA_b[j] -= A[i*numCols*5 + j*5 + 4]*X[(i-1)*numCols + j];
+				} else{
+					TDMA_b[j] -= A[i*numCols*5 + j*5 + 3]*X[(i+1)*numCols + j] + A[i*numCols*5 + j*5 + 4]*X[(i-1)*numCols + j];
+				}
+
+			}
+			TDMA(numCols, TDMA_A, TDMA_b, X, i);
+		}
+		iterCount++;
+
+		if (iterCount % iterToCheck == 0){
+			for (int j = 0; j<numRows; j++){
+				double dy = YC[0]*2;
+				qL[j] = K[j*numRows]*dy*(X[j*numCols] - tL)/(XC[0]);
+				qR[j] = K[(j + 1)*numRows - 1]*dy*(tR - X[(j+1)*numCols -1])/(1 - XC[numCols - 1]);
+				Q1 += qL[j];
+				Q2 += qR[j];
+			}
+			Q1 = Q1;
+			Q2 = Q2;
+			qAvg = (Q1 + Q2)/2;
+			keffNew = qAvg/((tR - tL)/numRows);
+			percentChange = fabs((keffNew - keffOld)/keffOld);
+			keffOld = keffNew;
+
+			if (percentChange < 0.01){
+				iterToCheck = 100;
+			} else if(percentChange < 0.001){
+				iterToCheck = 10;
+			}
+		}
+	}
+
+	free(mainDiag);
+	free(upperDiag);
+	free(lowerDiag);
+
+	return iterCount;
+}
