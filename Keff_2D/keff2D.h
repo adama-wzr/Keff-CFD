@@ -343,6 +343,8 @@ int TDMAscanner(double *A, double *b, double *X, int maxIter, double Threshold, 
 		iterCount++;
 
 		if (iterCount % iterToCheck == 0){
+			Q1 = 0;
+			Q2 = 0;
 			for (int j = 0; j<numRows; j++){
 				double dy = YC[0]*2;
 				qL[j] = K[j*numRows]*dy*(X[j*numCols] - tL)/(XC[0]);
