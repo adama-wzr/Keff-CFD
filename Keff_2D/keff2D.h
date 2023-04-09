@@ -1,14 +1,140 @@
 #include<omp.h>
 #include<math.h>
 #include<stdio.h>
-#include<stdlib.h>
-#include<time.h>
-#include<string.h>
+#include <stdlib.h>
+#include <time.h>
+#include <string.h>
 #include <vector>
 #include <iostream>
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
-#include<stdbool.h>
+#include <stdbool.h>
+#include <fstream>
+
+typedef struct{
+  double TCsolid;
+  double TCfluid;
+  int MeshIncreaseX;
+  int MeshIncreaseY;
+  double TempLeft;
+  double TempRight;
+  long int MAX_ITER;
+  double ConvergeCriteria;
+  char* inputFilename;
+  char* outputFilename;
+  int printTmap;
+  char* TMapName;
+  int verbose;
+}options;
+
+
+int printOptions(options* opts){
+	printf("Current selected options:\n");
+	printf("-------------------------_\n");
+	printf("TC Fluid = %.2lf\n", opts->TCfluid);
+	printf("TC Solid = %.2lf\n", opts->TCsolid);
+	printf("Temperature Left = %.2lf\n", opts->TempLeft);
+	printf("Temperature Right = %.2lf\n", opts->TempRight);
+	printf("Mesh Amp. X = %d\n", opts->MeshIncreaseX);
+	printf("Mesh Amp. Y = %d\n", opts->MeshIncreaseY);
+	printf("Maximum Iterations = %ld\n", opts->MAX_ITER);
+	printf("Convergence = %.10lf\n", opts->ConvergeCriteria);
+	printf("Name of input image: %s\n", opts->inputFilename);
+	printf("Name of output file: %s\n", opts->outputFilename);
+
+	if(opts->printTmap == 0){
+		printf("Print Temperature Map = False\n");
+	} else{
+		printf("Temperature Map Name = %s\n", opts->TMapName);
+	}
+
+
+	return 0;
+}
+
+
+int readInputFile(char* FileName, options* opts){
+
+	/*
+		readInputFile Function:
+		Inputs:
+			- FileName: pointer to where the input file name is stored.
+			- struct options: pass a struct with the options.
+		Outputs: None
+
+		Function reads the input file and stores the options in the opts struct.
+	*/
+
+	std::string myText;
+
+	char tempC[1000];
+	double tempD;
+	char tempFilenames[1000];
+	std::ifstream InputFile(FileName);
+
+	// initialize the pointers so they are not random
+
+	opts->inputFilename=(char*)malloc(1000*sizeof(char));
+	opts->outputFilename=(char*)malloc(1000*sizeof(char));
+	opts->TMapName=(char*)malloc(1000*sizeof(char));
+
+	while(std::getline(InputFile, myText)){
+
+	 	sscanf(myText.c_str(), "%s %lf", tempC, &tempD);
+	 	if (strcmp(tempC, "ks:") == 0){
+	 		opts->TCsolid = tempD;
+	 	}else if(strcmp(tempC, "kf:") == 0){
+	 		opts->TCfluid = tempD;
+
+	 	}else if(strcmp(tempC, "MeshAmpX:") == 0){
+	 		opts->MeshIncreaseX = (int)tempD;
+
+	 	}else if(strcmp(tempC, "MeshAmpY:") == 0){
+	 		opts->MeshIncreaseY = (int)tempD;
+
+	 	}else if(strcmp(tempC, "InputName:") == 0){
+	 		sscanf(myText.c_str(), "%s %s", tempC, tempFilenames);
+	 		strcpy(opts->inputFilename, tempFilenames);
+
+	 	}else if(strcmp(tempC, "TR:") == 0){
+	 		opts->TempRight = tempD;
+
+	 	}else if(strcmp(tempC, "TL:") == 0){
+	 		opts->TempLeft = tempD;
+
+	 	}else if(strcmp(tempC, "OutputName:") == 0){
+	 		sscanf(myText.c_str(), "%s %s", tempC, tempFilenames);
+	 		strcpy(opts->outputFilename, tempFilenames);
+
+	 	}else if(strcmp(tempC, "printTMap:") == 0){
+	 		opts->printTmap = (int)tempD;
+
+	 	}else if(strcmp(tempC, "TMapName:") == 0){
+	 		sscanf(myText.c_str(), "%s %s", tempC, tempFilenames);
+	 		strcpy(opts->TMapName, tempFilenames);
+
+	 	}else if(strcmp(tempC, "Convergence:") == 0){
+	 		opts->ConvergeCriteria = tempD;
+
+	 	}else if(strcmp(tempC, "MaxIter:") == 0){
+	 		opts->MAX_ITER = (long int)tempD;
+
+	 	}else if(strcmp(tempC, "Verbose:") == 0){
+	 		opts->verbose = (int)tempD;
+	 	}
+	}
+	
+	InputFile.close();
+
+
+
+	if(opts->verbose == 1){
+		printOptions(opts);
+	} else if(opts->verbose != 0){
+		printf("Please enter a value of 0 or 1 for 'verbose'. Default = 0.\n");
+	}
+	return 0;
+}
 
 
 

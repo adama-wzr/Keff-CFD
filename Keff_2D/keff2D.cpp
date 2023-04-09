@@ -1,7 +1,7 @@
 # include "keff2D.h"
 
 #define ITER_LIMIT 100000
-#define CONVERGE  0.0001
+#define CONVERGE  0.000001
 
 int main(int argc, char const *argv[])
 {
@@ -17,6 +17,8 @@ int main(int argc, char const *argv[])
 
 	fflush(stdout);
 
+	//
+	options opts;
 	// user input number of threads and default
 
 	if(argc == 1){
@@ -44,6 +46,14 @@ int main(int argc, char const *argv[])
 	unsigned char *target_data;
 
 	int width, height, channel;
+
+	char inputFilename[30];
+
+	sprintf(inputFilename, "input.txt");
+
+	readInputFile(inputFilename, &opts);
+
+	return 1;
 
 	char filename[30];
 
