@@ -1,8 +1,5 @@
 # include "keff2D.h"
 
-#define ITER_LIMIT 100000
-#define CONVERGE  0.000001
-
 int main(int argc, char const *argv[])
 {
 	// initialization variables for openmp
@@ -21,25 +18,25 @@ int main(int argc, char const *argv[])
 	options opts;
 	// user input number of threads and default
 
-	if(argc == 1){
-		printf("Number of threads set to default = 1.\n");
-		num_threads = 1;
-		omp_set_num_threads(num_threads);
-	} else{
-		num_threads = strtol(argv[1], NULL, 10);
-		printf("Number of Threads = %d\n", num_threads);
-		omp_set_num_threads(num_threads);
+	char inputFilename[30];
+
+	sprintf(inputFilename, "input.txt");
+
+	readInputFile(inputFilename, &opts);
+
+	num_threads = opts.numCores;
+
+	if(opts.verbose == 1){
+		printf("Number of threads = %d\n", num_threads);
 	}
 
 	// Initialize domain variables
 
-	double kFluid = 1;
-	double kSolid = 10.;
+	double kFluid = opts.TCfluid;
+	double kSolid = opts.TCsolid;
 
-	double TL = 0;
-	double TR = 1;
-
-	std::cout << "kFluid = " << kFluid << std::endl;
+	double TL = opts.TempLeft;
+	double TR = opts.TempRight;
 
 	// Read image
 
@@ -47,25 +44,13 @@ int main(int argc, char const *argv[])
 
 	int width, height, channel;
 
-	char inputFilename[30];
-
-	sprintf(inputFilename, "input.txt");
-
-	readInputFile(inputFilename, &opts);
-
-	return 1;
-
-	char filename[30];
-
-	sprintf(filename, "p05.jpg");
-
 	// Call function to read the image:
 
-	readImage(&target_data, &width, &height, &channel, filename);
+	readImage(&target_data, &width, &height, &channel, opts.inputFilename);
 
-	// Print if successful
-
-	std::cout << "width = " << width << " height = " << height << " channel = " << channel << std::endl;
+	if(opts.verbose == 1){
+		std::cout << "width = " << width << " height = " << height << " channel = " << channel << std::endl;
+	}
 
 	if (channel != 1){
 		printf("Error: please enter a grascale image with 1 channel.\n Current number of channels = %d\n", channel);
@@ -77,11 +62,11 @@ int main(int argc, char const *argv[])
 	bool structuredMesh = true;
 
 	// Define amplification factors for mesh resolution
-	int AmpFactorX = 10;
-	int AmpFactorY = 5;
+	int AmpFactorX = opts.MeshIncreaseX;
+	int AmpFactorY = opts.MeshIncreaseY;
 
 	if (AmpFactorX < 1 || AmpFactorY < 1){
-		printf("Feature not currently available, variable has to be integer larger than 1.\n");
+		printf("Feature not currently available, AmpFactor has to be integer larger than 1.\n");
 		return 1;
 	}
 
@@ -149,7 +134,7 @@ int main(int argc, char const *argv[])
 
 	int iterTaken = 0;
 
-	iterTaken = TDMAscanner(CoeffMatrix, RHS, TemperatureDist, (int) ITER_LIMIT, (double) CONVERGE, numCellsX, numCellsY, QR, QL,
+	iterTaken = TDMAscanner(CoeffMatrix, RHS, TemperatureDist, opts.MAX_ITER, opts.ConvergeCriteria, numCellsX, numCellsY, QR, QL,
 	TR, TL, kMatrix, xCenters, yCenters);
 
 	//

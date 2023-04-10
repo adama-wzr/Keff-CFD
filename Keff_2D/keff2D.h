@@ -24,13 +24,18 @@ typedef struct{
   char* outputFilename;
   int printTmap;
   char* TMapName;
+  int printQmap;
+  char* QMapName;
   int verbose;
+  int numCores;
 }options;
 
 
 int printOptions(options* opts){
-	printf("Current selected options:\n");
-	printf("-------------------------_\n");
+	printf("-------------------------\n\n");
+	printf("Current selected options:\n\n");
+	printf("-------------------------\n");
+	printf("Number of Threads Allocated: %d\n", opts->numCores);
 	printf("TC Fluid = %.2lf\n", opts->TCfluid);
 	printf("TC Solid = %.2lf\n", opts->TCsolid);
 	printf("Temperature Left = %.2lf\n", opts->TempLeft);
@@ -47,6 +52,12 @@ int printOptions(options* opts){
 	} else{
 		printf("Temperature Map Name = %s\n", opts->TMapName);
 	}
+	if(opts->printQmap == 0){
+		printf("Print Heat Flux Map = False\n");
+	} else{
+		printf("Heat Flux Map Name = %s\n", opts->QMapName);
+	}
+	printf("--------------------------------------\n");
 
 
 	return 0;
@@ -77,7 +88,7 @@ int readInputFile(char* FileName, options* opts){
 	opts->inputFilename=(char*)malloc(1000*sizeof(char));
 	opts->outputFilename=(char*)malloc(1000*sizeof(char));
 	opts->TMapName=(char*)malloc(1000*sizeof(char));
-
+	opts->QMapName=(char*)malloc(1000*sizeof(char));
 	while(std::getline(InputFile, myText)){
 
 	 	sscanf(myText.c_str(), "%s %lf", tempC, &tempD);
@@ -113,6 +124,13 @@ int readInputFile(char* FileName, options* opts){
 	 		sscanf(myText.c_str(), "%s %s", tempC, tempFilenames);
 	 		strcpy(opts->TMapName, tempFilenames);
 
+	 	}else if(strcmp(tempC, "printQMap:") == 0){
+	 		opts->printQmap = (int)tempD;
+
+	 	}else if(strcmp(tempC, "QMapName:") == 0){
+	 		sscanf(myText.c_str(), "%s %s", tempC, tempFilenames);
+	 		strcpy(opts->QMapName, tempFilenames);
+
 	 	}else if(strcmp(tempC, "Convergence:") == 0){
 	 		opts->ConvergeCriteria = tempD;
 
@@ -121,6 +139,14 @@ int readInputFile(char* FileName, options* opts){
 
 	 	}else if(strcmp(tempC, "Verbose:") == 0){
 	 		opts->verbose = (int)tempD;
+	 	}else if(strcmp(tempC, "NumCores:") == 0){
+	 		if(tempD<1){
+	 			printf("Entered number of cores not valid.\n");
+	 			printf("Default = 1.");
+	 			opts->numCores = 1;
+	 		}else{
+	 			opts->numCores = (int)tempD;
+	 		}
 	 	}
 	}
 	
@@ -364,7 +390,7 @@ int TDMA(int n, double *A, double *b, double *x, int rowNumber){
 }
 
 
-int TDMAscanner(double *A, double *b, double *X, int maxIter, double Threshold, int numCols, int numRows, double *qR, double *qL,
+int TDMAscanner(double *A, double *b, double *X, long int maxIter, double Threshold, int numCols, int numRows, double *qR, double *qL,
 	double tR, double tL, double *K, double *XC, double *YC){
 
 	/*
