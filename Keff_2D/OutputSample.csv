@@ -1,0 +1,2 @@
+Output Sample:
+keff,QL,QR,Iter,ConvergeCriteria,inputName,nElements,MeshIncreaseX,MeshIncreaseY,porosity,ks,kf,tl,tr,time,nCores

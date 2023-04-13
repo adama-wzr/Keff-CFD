@@ -57,6 +57,7 @@ int printOptions(options* opts){
 	} else{
 		printf("Heat Flux Map Name = %s\n", opts->QMapName);
 	}
+	printf("Number of Cores = %d\n", opts->numCores);
 	printf("--------------------------------------\n");
 
 
@@ -162,6 +163,18 @@ int readInputFile(char* FileName, options* opts){
 	return 0;
 }
 
+int createOutput(options* o, double keff, double Q1, double Q2, long int iter, int nElements, double porosity, double time){
+
+
+	FILE *OUTPUT;
+
+  OUTPUT = fopen(o->outputFilename, "a+");
+  fprintf(OUTPUT, "%.10lf,%f,%f,%ld,%.10lf,%s,%d,%d,%d,%f,%f,%f,%f,%f,%f,%d\n",keff, Q1, Q2, iter, o->ConvergeCriteria, o->inputFilename,
+  	nElements, o->MeshIncreaseX, o->MeshIncreaseY, porosity, o->TCsolid, o->TCfluid, o->TempLeft, o->TempRight, time, o->numCores);
+
+  fclose(OUTPUT);
+  return 0;
+}
 
 
 int readImage(unsigned char** imageAddress, int* Width, int* Height, int* NumOfChannels, char* ImageName){
@@ -182,6 +195,34 @@ int readImage(unsigned char** imageAddress, int* Width, int* Height, int* NumOfC
 	*imageAddress = stbi_load(ImageName, Width, Height, NumOfChannels, 1);
 
 	return 0;
+}
+
+
+double calcPorosity(unsigned char* imageAddress, int Width, int Height){
+	/*
+		calcPorosity
+		Inputs:
+			- imageAddress: pointer to the read image.
+			- Width: original width from std_image
+			- Height: original height from std_image
+
+		Output:
+			- porosity: double containing porosity.
+
+		Function calculates porosity by counting pixels.
+	*/
+
+	double totalCells = (double)Height*Width;
+	double porosity = 0;
+	for(int i = 0; i<Height; i++){
+		for(int j = 0; j<Width; j++){
+			if(imageAddress[i*Width + j] < 150){
+				porosity += 1.0/totalCells;
+			}
+		}
+	}
+
+	return porosity;
 }
 
 
@@ -303,22 +344,91 @@ int DiscretizeMatrixCD2D(double* K, int numRows, int numCols, double* A, double*
 	return 0;
 }
 
+int SolInitLinear(double *xVec, double tL, double tR, int numCols, int numRows){
+	/*
+	Function ParallelJacobi:
+	Inputs:
+		- *xVec: pointer to the temperature map allocated vector
+		- double tL: temperature at the left boundary
+		- double tR: temperature at the right boundary
+		- int numCols: number of cells in the x-direction
+		- int numRows: number of cells in the y-direction
 
-int JacobiIteration(double *arr, double *sol, double *x_vec, int iter_limit, double tolerance, int size){
-	int iteration_count = 0;
-	double *temp_x_vec = (double *)malloc(sizeof(double)*size*size);
-	double conv_stat = 1;
-	double sigma = 0;
-	double norm_diff = 1;
-	printf("size = %d\n", size);
-	for (int i = 0; i<size*size; i++){
-		x_vec[i] = 0.5;
-		temp_x_vec[i] = x_vec[i];
+	Outputs: none
+
+	SolInitLinear initializes the temperature assuming a linear distribution between
+	the right and left boundaries.
+	*/
+
+	for(int i = 0; i<numRows; i++){
+		for(int j = 0; j<numCols; j++){
+			if(tR > tL){
+				xVec[i*numCols + j] = 1/numCols*j*(tR - tL) + tL;
+			} else if(tR < tL){
+				xVec[i*numCols + j] = 1/numCols*(numCols - (j+1))*(tL - tR) + tR;
+			}
+		}
 	}
 
-	while(norm_diff > tolerance && iteration_count < iter_limit){
-		for(int i = 0; i<size*size; i++){
+	return 0;
+}
+
+int ParallelJacobi(double *arr, double *sol, double *x_vec, double *qL, double *qR, double *K, long int iterLimit, double tolerance, int numCols, int numRows,
+	double tL, double tR, double *XC, double *YC){
+	/*
+	Function ParallelJacobi:
+	Inputs:
+		- *arr: pointer to the discretization matrix, size (numCols*numRows, 5)
+		- *sol: pointert to the RHS, size (numCols*numRows)
+		- *x_vec: pointer to the solution vector, size (numCols*numRows)
+		- *qL: pointer a vector of size (numRows) containing heat flux from each cell
+			at the left side of the domain.
+		- *qR: pointer a vector of size (numRows) containing heat flux from each cell
+			at the right side of the domain.
+		- *K: vector containing the thermal conductivity of each cell in the domain.
+		- iterLimit: integer with the maximum number of allowed iterations
+		- tolerance: value of convergence criteria
+		- numCols: numCols of the domain
+		- numRows: numRows of the domain
+		- tL: temperature in the left boundary.
+		- tR: temperature in the right boundary.
+		- *XC: pointer to vector containing the x-coordinate of the center of each cell (length numCols)
+		- *YC: pointer to vector containing the y-coordinate of the center of each cell (length numRows)
+
+	Outputs:
+		- int IterationCount
+
+	Jacobi iteration implemented in parallel using OpenMP. This function is specifically
+	meant for the 5 diagonal discretization. 
+
+	*/
+	int iterCount = 0;
+	double *temp_x_vec = (double *)malloc(sizeof(double)*numCols*numRows);
+	double sigma = 0;
+	double norm_diff = 1;
+	double percentChange = 1;
+	int i;
+	double keffOld = 1;
+	double keffNew = 1;
+	int iterToCheck = 1000;
+	double Q1,Q2;
+	double qAvg = 0;
+	#pragma omp parallel private(i, sigma)
+
+	#pragma omp for
+	for(i = 0; i<numRows; i++){
+		for(int j = 0; j<numCols; j++){
+			temp_x_vec[i*numCols + j] = x_vec[i*numCols + j];
+		}
+	}
+	
+
+	while(percentChange > tolerance && iterCount < iterLimit){
+		#pragma omp parallel private(i, sigma)
+		#pragma omp for
+		for(i = 0; i<numRows*numCols; i++){
 			sigma = 0;
+			temp_x_vec[i] = x_vec[i];
 			for(int j = 1; j<5; j++){
 				if(arr[i*5 + j] != 0){
 					if(j == 1){
@@ -326,28 +436,151 @@ int JacobiIteration(double *arr, double *sol, double *x_vec, int iter_limit, dou
 					} else if(j == 2){
 						sigma += arr[i*5 + j]*temp_x_vec[i + 1];
 					} else if(j == 3){
-						sigma += arr[i*5 + j]*temp_x_vec[i + size];
+						sigma += arr[i*5 + j]*temp_x_vec[i + numCols];
 					} else if(j == 4){
-						sigma += arr[i*5 + j]*temp_x_vec[i - size];
+						sigma += arr[i*5 + j]*temp_x_vec[i - numCols];
 					}
 				}
 			}
 			x_vec[i] = 1/arr[i*5 + 0]*(sol[i] - sigma);
-			// printf("x_vec[%d] = %f, sigma = %f\n",i,x_vec[i],sigma);
 		}
 
-		norm_diff = 0;
+		iterCount++;
+		
 
-		for (int i = 0; i < size*size; i++){
-			norm_diff += sqrt((x_vec[i] - temp_x_vec[i])*(x_vec[i] - temp_x_vec[i]));
-			temp_x_vec[i] = x_vec[i];
+		if (iterCount % iterToCheck == 0){
+			Q1 = 0;
+			Q2 = 0;
+			for (int j = 0; j<numRows; j++){
+				double dy = YC[0]*2;
+				qL[j] = K[j*numRows]*dy*(x_vec[j*numCols] - tL)/(XC[0]);
+				qR[j] = K[(j + 1)*numRows - 1]*dy*(tR - x_vec[(j+1)*numCols -1])/(1 - XC[numCols - 1]);
+				Q1 += qL[j];
+				Q2 += qR[j];
+			}
+			Q1 = Q1;
+			Q2 = Q2;
+			qAvg = (Q1 + Q2)/2;
+			keffNew = qAvg/((tR - tL)/numRows);
+			percentChange = fabs((keffNew - keffOld)/keffOld);
+			keffOld = keffNew;
+
+			if (percentChange < 0.001){
+				iterToCheck = 100;
+			} else if(percentChange < 0.0001){
+				iterToCheck = 10;
+			}
 		}
-		iteration_count++;
+
+		#pragma omp for
+		for(i = 0; i<numRows; i++){
+			for(int j = 0; j<numCols; j++){
+				temp_x_vec[i*numCols + j] = x_vec[i*numCols + j];
+			}
+		}
+
 	}
-	printf("Norm diff = %f\n",norm_diff);
+
+		
 	free(temp_x_vec);
-	return iteration_count;
+	return iterCount;
 }
+
+
+int ParallelGS(double *arr, double *sol, double *x_vec, double *qL, double *qR, double *K, long int iterLimit, double tolerance, int numCols, int numRows,
+	double tL, double tR, double *XC, double *YC, int nCores){
+	/*
+	Function ParallelGS:
+	Inputs:
+		- *arr: pointer to the discretization matrix, size (numCols*numRows, 5)
+		- *sol: pointert to the RHS, size (numCols*numRows)
+		- *x_vec: pointer to the solution vector, size (numCols*numRows)
+		- *qL: pointer a vector of size (numRows) containing heat flux from each cell
+			at the left side of the domain.
+		- *qR: pointer a vector of size (numRows) containing heat flux from each cell
+			at the right side of the domain.
+		- *K: vector containing the thermal conductivity of each cell in the domain.
+		- iterLimit: integer with the maximum number of allowed iterations
+		- tolerance: value of convergence criteria
+		- numCols: numCols of the domain
+		- numRows: numRows of the domain
+		- tL: temperature in the left boundary.
+		- tR: temperature in the right boundary.
+		- *XC: pointer to vector containing the x-coordinate of the center of each cell (length numCols)
+		- *YC: pointer to vector containing the y-coordinate of the center of each cell (length numRows)
+
+	Outputs:
+		- int IterationCount
+
+	Gauss-Seidel iteration implemented in parallel using OpenMP. This function is specifically
+	meant for the 5 diagonal discretization. 
+
+	*/
+	int iterCount = 0;
+	double sigma = 0;
+	double norm_diff = 1;
+	double percentChange = 1;
+	int i;
+	double keffOld = 1;
+	double keffNew = 1;
+	int iterToCheck = 1000;
+	double Q1,Q2;
+	double qAvg = 0;
+	#pragma omp parallel private(i, sigma)
+	
+
+	while(percentChange > tolerance && iterCount < iterLimit){
+		#pragma omp parallel private(i, sigma)
+		#pragma omp for schedule(dynamic, numRows*numCols/nCores)
+		for(i = 0; i<numRows*numCols; i++){
+			sigma = 0;
+			for(int j = 1; j<5; j++){
+				if(arr[i*5 + j] != 0){
+					if(j == 1){
+						sigma += arr[i*5 + j]*x_vec[i - 1];
+					} else if(j == 2){
+						sigma += arr[i*5 + j]*x_vec[i + 1];
+					} else if(j == 3){
+						sigma += arr[i*5 + j]*x_vec[i + numCols];
+					} else if(j == 4){
+						sigma += arr[i*5 + j]*x_vec[i - numCols];
+					}
+				}
+			}
+			x_vec[i] = 1/arr[i*5 + 0]*(sol[i] - sigma);
+		}
+
+		iterCount++;
+		
+
+		if (iterCount % iterToCheck == 0){
+			Q1 = 0;
+			Q2 = 0;
+			for (int j = 0; j<numRows; j++){
+				double dy = YC[0]*2;
+				qL[j] = K[j*numRows]*dy*(x_vec[j*numCols] - tL)/(XC[0]);
+				qR[j] = K[(j + 1)*numRows - 1]*dy*(tR - x_vec[(j+1)*numCols -1])/(1 - XC[numCols - 1]);
+				Q1 += qL[j];
+				Q2 += qR[j];
+			}
+			Q1 = Q1;
+			Q2 = Q2;
+			qAvg = (Q1 + Q2)/2;
+			keffNew = qAvg/((tR - tL)/numRows);
+			percentChange = fabs((keffNew - keffOld)/keffOld);
+			keffOld = keffNew;
+
+			if (percentChange < 0.001){
+				iterToCheck = 100;
+			} else if(percentChange < 0.0001){
+				iterToCheck = 10;
+			}
+		}
+	}
+	return iterCount;
+}
+
+
 
 int TDMA(int n, double *A, double *b, double *x, int rowNumber){
 	/*
@@ -413,7 +646,8 @@ int TDMAscanner(double *A, double *b, double *X, long int maxIter, double Thresh
 		- *XC: pointer to vector containing the x-coordinate of the center of each cell (length numCols)
 		- *YC: pointer to vector containing the y-coordinate of the center of each cell (length numRows)
 
-	Outputs: None
+	Outputs:
+		- int IterationCount;
 
 	Function extends the functionality of the regular TDMA to 5 diagonal systems, using 
 	the iterative TDMA algorithm. Basically it scans one row at a time, taken the others as knowns.

@@ -32,11 +32,14 @@ int main(int argc, char const *argv[])
 
 	// Initialize domain variables
 
+	omp_set_num_threads(opts.numCores);
+
 	double kFluid = opts.TCfluid;
 	double kSolid = opts.TCsolid;
 
 	double TL = opts.TempLeft;
 	double TR = opts.TempRight;
+	double porosity = 0;
 
 	// Read image
 
@@ -48,8 +51,11 @@ int main(int argc, char const *argv[])
 
 	readImage(&target_data, &width, &height, &channel, opts.inputFilename);
 
+	porosity = calcPorosity(target_data, width, height);
+
 	if(opts.verbose == 1){
 		std::cout << "width = " << width << " height = " << height << " channel = " << channel << std::endl;
+		std::cout << "Porosity = " << porosity << std::endl;
 	}
 
 	if (channel != 1){
@@ -73,6 +79,7 @@ int main(int argc, char const *argv[])
 	// calculate number of cells
 	int numCellsX = width*AmpFactorX;
 	int numCellsY = height*AmpFactorY;
+	int nElements = numCellsX*numCellsY;
 
 	// Now get the center of each cell:
 	double *xCenters = (double *)malloc(sizeof(double)*numCellsX);
@@ -123,19 +130,20 @@ int main(int argc, char const *argv[])
 
 	// Initialize x-vector
 
-	for (int i = 0; i< numCellsY; i++){
-		for(int j = 0; j<numCellsX; j++){
-			double a = (double)1.0/numCellsX;
-			TemperatureDist[i*numCellsX + j] = (double)a*j;
-		}
-	}
+	SolInitLinear(TemperatureDist, TR, TL, numCellsX, numCellsY);
 
 	// Solve
 
 	int iterTaken = 0;
 
-	iterTaken = TDMAscanner(CoeffMatrix, RHS, TemperatureDist, opts.MAX_ITER, opts.ConvergeCriteria, numCellsX, numCellsY, QR, QL,
-	TR, TL, kMatrix, xCenters, yCenters);
+	// iterTaken = ParallelJacobi(CoeffMatrix, RHS, TemperatureDist, QL, QR, kMatrix, opts.MAX_ITER, opts.ConvergeCriteria, numCellsX, numCellsY,
+	// 	TL, TR, xCenters, yCenters);
+
+	// iterTaken = TDMAscanner(CoeffMatrix, RHS, TemperatureDist, opts.MAX_ITER, opts.ConvergeCriteria, numCellsX, numCellsY, QR, QL,
+	// 	TR, TL, kMatrix, xCenters, yCenters);
+
+	iterTaken = ParallelGS(CoeffMatrix, RHS, TemperatureDist, QL, QR, kMatrix, opts.MAX_ITER, opts.ConvergeCriteria, numCellsX, numCellsY,
+		TL, TR, xCenters, yCenters, num_threads);
 
 	//
 	double dy = yCenters[0]*2;
@@ -161,6 +169,8 @@ int main(int argc, char const *argv[])
 
 	printf("Keff = %f, iterTaken = %d\n", k_eff, iterTaken);
 	run_time = omp_get_wtime() - start_time;
+
+	createOutput(&opts, k_eff, Q1, Q2, iterTaken, nElements, porosity, run_time);
 
     printf("Time spent = %lf\n", run_time);
 
