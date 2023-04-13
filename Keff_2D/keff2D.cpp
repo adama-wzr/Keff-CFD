@@ -167,7 +167,14 @@ int main(int argc, char const *argv[])
 
 	double k_eff = Q_avg/(TR-TL);
 
-	printf("Keff = %f, iterTaken = %d\n", k_eff, iterTaken);
+	printf("Keff = %f, Total Iterations = %d\n", k_eff, iterTaken);
+
+	if(opts.printTmap == 1){
+		printTMAP(&opts, TemperatureDist, numCellsY, numCellsX);
+	}
+
+	
+
 	run_time = omp_get_wtime() - start_time;
 
 	createOutput(&opts, k_eff, Q1, Q2, iterTaken, nElements, porosity, run_time);

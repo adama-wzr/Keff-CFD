@@ -241,6 +241,34 @@ double WeightedHarmonicMean(double w1, double w2, double x1, double x2){
 	return H;
 }
 
+int printTMAP(options* o, double* x, int numRows, int numCols){
+	/*
+		printTMAP:
+		Inputs:
+			- o -> options datastructure
+			- x -> pointer to temperature distribution map.
+			- numRows -> number of rows
+			- numCols -> number of columns
+		Outputs:
+			- none
+		Function creates and saves a temperature map onto a .csv file
+	*/
+
+	FILE *T_OUT;
+
+  T_OUT = fopen(o->TMapName, "a+");
+  fprintf(T_OUT,"x,y,T\n");
+
+  for(int i = 0; i<numRows; i++){
+  	for(int j = 0; j<numCols; j++){
+  		fprintf(T_OUT,"%d,%d,%f\n",j,i,x[i*numCols + j]);
+  	}
+  }
+
+  fclose(T_OUT);
+  return 0;
+}
+
 
 int DiscretizeMatrixCD2D(double* K, int numRows, int numCols, double* A, double* b, double tL, double tR, double* xCenter, double* yCenter){
 	/*
