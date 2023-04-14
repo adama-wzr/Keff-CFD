@@ -173,6 +173,10 @@ int main(int argc, char const *argv[])
 		printTMAP(&opts, TemperatureDist, numCellsY, numCellsX);
 	}
 
+	if(opts.printQmap == 1){
+		printQMAP(&opts, TemperatureDist, kMatrix, numCellsY, numCellsX, xCenters, yCenters, QL, QR);
+	}
+
 	
 
 	run_time = omp_get_wtime() - start_time;

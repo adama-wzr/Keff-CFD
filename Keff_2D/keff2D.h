@@ -256,7 +256,7 @@ int printTMAP(options* o, double* x, int numRows, int numCols){
 
 	FILE *T_OUT;
 
-  T_OUT = fopen(o->TMapName, "a+");
+  T_OUT = fopen(o->TMapName, "w+");
   fprintf(T_OUT,"x,y,T\n");
 
   for(int i = 0; i<numRows; i++){
@@ -267,6 +267,53 @@ int printTMAP(options* o, double* x, int numRows, int numCols){
 
   fclose(T_OUT);
   return 0;
+}
+
+
+int printQMAP(options* o, double* x, double* K, int numRows, int numCols, double* xCenter, double* yCenter, double* qR, double* qL){
+
+	/*
+		printQMAP:
+		Inputs:
+			- o -> options datastructure
+			- x -> pointer to temperature distribution map.
+			- numRows -> number of rows
+			- numCols -> number of columns
+			- xCenter = pointer to array with center of each cell (x-coordinate)
+			- yCenter = pointer to array with center of each cell (y-coordinate)
+			- qL = pointer to array heat transfer across the left boundary
+			- qR = pointer to array with heat transfer across the right boundary
+		Outputs:
+			- none
+		Function creates and saves a heat flux map onto a .csv file.
+	*/
+
+
+	FILE *Q_OUT;
+	Q_OUT = fopen(o->QMapName, "w+");
+	fprintf(Q_OUT,"x,y,Q\n");
+
+	double localQ;
+	double localK;
+	double dy = yCenter[2] - yCenter[1];
+	double dx = xCenter[2] - xCenter[1];
+
+	for(int i = 0; i<numRows; i++){
+		for(int j = 0; j<numCols + 1; j++){
+			if(j == 0){
+				fprintf(Q_OUT,"%d,%d,%f\n",j,i, qL[i]);
+			} else if(j == numCols){
+				fprintf(Q_OUT, "%d,%d,%f\n",j,i, qR[i]);
+			} else{
+				localK = WeightedHarmonicMean(dx/2, dx/2, K[i*numCols + j], K[i*numCols + j - 1]);
+				localQ = dy/dx*localK*(x[i*numCols + j] - x[i*numCols + j - 1]);
+				fprintf(Q_OUT, "%d,%d,%f\n",j,i, localQ);
+			}
+		}
+	}
+
+	fclose(Q_OUT);
+	return 0;
 }
 
 
