@@ -28,38 +28,56 @@ typedef struct{
   char* QMapName;
   int verbose;
   int numCores;
+  int MeshFlag;
+  int MaxMesh;
 }options;
 
 
 int printOptions(options* opts){
-	printf("-------------------------\n\n");
-	printf("Current selected options:\n\n");
-	printf("-------------------------\n");
-	printf("Number of Threads Allocated: %d\n", opts->numCores);
-	printf("TC Fluid = %.2lf\n", opts->TCfluid);
-	printf("TC Solid = %.2lf\n", opts->TCsolid);
-	printf("Temperature Left = %.2lf\n", opts->TempLeft);
-	printf("Temperature Right = %.2lf\n", opts->TempRight);
-	printf("Mesh Amp. X = %d\n", opts->MeshIncreaseX);
-	printf("Mesh Amp. Y = %d\n", opts->MeshIncreaseY);
-	printf("Maximum Iterations = %ld\n", opts->MAX_ITER);
-	printf("Convergence = %.10lf\n", opts->ConvergeCriteria);
-	printf("Name of input image: %s\n", opts->inputFilename);
-	printf("Name of output file: %s\n", opts->outputFilename);
+	if(opts->MeshFlag == 0){
+		printf("-------------------------\n\n");
+		printf("Current selected options:\n\n");
+		printf("-------------------------\n");
+		printf("Number of Threads Allocated: %d\n", opts->numCores);
+		printf("TC Fluid = %.2lf\n", opts->TCfluid);
+		printf("TC Solid = %.2lf\n", opts->TCsolid);
+		printf("Temperature Left = %.2lf\n", opts->TempLeft);
+		printf("Temperature Right = %.2lf\n", opts->TempRight);
+		printf("Mesh Amp. X = %d\n", opts->MeshIncreaseX);
+		printf("Mesh Amp. Y = %d\n", opts->MeshIncreaseY);
+		printf("Maximum Iterations = %ld\n", opts->MAX_ITER);
+		printf("Convergence = %.10lf\n", opts->ConvergeCriteria);
+		printf("Name of input image: %s\n", opts->inputFilename);
+		printf("Name of output file: %s\n", opts->outputFilename);
 
-	if(opts->printTmap == 0){
-		printf("Print Temperature Map = False\n");
+		if(opts->printTmap == 0){
+			printf("Print Temperature Map = False\n");
+		} else{
+			printf("Temperature Map Name = %s\n", opts->TMapName);
+		}
+		if(opts->printQmap == 0){
+			printf("Print Heat Flux Map = False\n");
+		} else{
+			printf("Heat Flux Map Name = %s\n", opts->QMapName);
+		}
+		printf("--------------------------------------\n");
+	} else if(opts->MeshFlag == 1){
+		printf("-------------------------\n\n");
+		printf("Mesh Convergence Test:\n\n");
+		printf("Output of Mesh convergence Test: %s\n", opts->outputFilename);
+		printf("Number of Threads Allocated: %d\n", opts->numCores);
+		printf("TC Fluid = %.2lf\n", opts->TCfluid);
+		printf("TC Solid = %.2lf\n", opts->TCsolid);
+		printf("Temperature Left = %.2lf\n", opts->TempLeft);
+		printf("Temperature Right = %.2lf\n", opts->TempRight);
+		printf("Maximum Iterations = %ld\n", opts->MAX_ITER);
+		printf("Convergence = %.10lf\n", opts->ConvergeCriteria);
+		printf("Maximum Mesh increase: %d\n", opts->MaxMesh);
+		printf("--------------------------------------\n");
 	} else{
-		printf("Temperature Map Name = %s\n", opts->TMapName);
-	}
-	if(opts->printQmap == 0){
-		printf("Print Heat Flux Map = False\n");
-	} else{
-		printf("Heat Flux Map Name = %s\n", opts->QMapName);
-	}
-	printf("Number of Cores = %d\n", opts->numCores);
-	printf("--------------------------------------\n");
-
+		printf("Please enter either 0 or 1 for Mesh Flag.\n");
+		return 1;
+	}	
 
 	return 0;
 }
@@ -148,6 +166,10 @@ int readInputFile(char* FileName, options* opts){
 	 		}else{
 	 			opts->numCores = (int)tempD;
 	 		}
+	 	} else if(strcmp(tempC, "MeshFlag:") == 0){
+	 		opts->MeshFlag = (int)tempD;
+	 	} else if(strcmp(tempC, "MaxMesh:") == 0){
+	 		opts->MaxMesh = (int)tempD;
 	 	}
 	}
 	
@@ -421,7 +443,7 @@ int DiscretizeMatrixCD2D(double* K, int numRows, int numCols, double* A, double*
 
 int SolInitLinear(double *xVec, double tL, double tR, int numCols, int numRows){
 	/*
-	Function ParallelJacobi:
+	Function SolInitLinear:
 	Inputs:
 		- *xVec: pointer to the temperature map allocated vector
 		- double tL: temperature at the left boundary
@@ -445,6 +467,37 @@ int SolInitLinear(double *xVec, double tL, double tR, int numCols, int numRows){
 		}
 	}
 
+	return 0;
+}
+
+
+int SolExpandSimple(double *OGTemperature, double *ExpandedT, int NativeWidth, int NativeHeight, int AmpFactor){
+	/*
+	Function SolExpandSimple:
+	Inputs:
+		- *OGTemperature: pointer to the solution temperature map of the original mesh size
+		- *ExpandedT: pointer to array that will receive the new temperature distribution
+				and use it as initial guess at the solution.
+		- int NativeWidth: width of the original solution
+		- int NativeHeight: height of the original solution
+		- int AmpFactor: increase in size from the original
+
+	Outputs: none
+
+	SolExpandSimple grabs the final solution temperature distribution and simply expands
+	it onto a larger mesh. No calculations or interpolation is done, this is just to roughly
+	initialize it close to a solution.
+	*/
+
+	for(int i = 0; i<NativeHeight*AmpFactor; i++){
+		for(int j = 0; j<NativeWidth*AmpFactor; j++){
+			int targetIndexRow = i/AmpFactor;
+			int targetIndexCol = j/AmpFactor;
+
+			ExpandedT[i*(NativeWidth*AmpFactor) + j] = OGTemperature[targetIndexRow*NativeWidth + targetIndexCol];
+		}
+	}
+	
 	return 0;
 }
 
