@@ -30,14 +30,16 @@ typedef struct{
   int numCores;
   int MeshFlag;
   int MaxMesh;
+  int BatchFlag;
+  int NumImg;
 }options;
 
 
 int printOptions(options* opts){
-	if(opts->MeshFlag == 0){
-		printf("-------------------------\n\n");
+	if(opts->MeshFlag == 0 && opts->BatchFlag == 0){
+		printf("--------------------------------------\n\n");
 		printf("Current selected options:\n\n");
-		printf("-------------------------\n");
+		printf("--------------------------------------\n");
 		printf("Number of Threads Allocated: %d\n", opts->numCores);
 		printf("TC Fluid = %.2lf\n", opts->TCfluid);
 		printf("TC Solid = %.2lf\n", opts->TCsolid);
@@ -60,9 +62,9 @@ int printOptions(options* opts){
 		} else{
 			printf("Heat Flux Map Name = %s\n", opts->QMapName);
 		}
-		printf("--------------------------------------\n");
-	} else if(opts->MeshFlag == 1){
-		printf("-------------------------\n\n");
+		printf("--------------------------------------\n\n");
+	} else if(opts->MeshFlag == 1 && opts->BatchFlag == 0){
+		printf("--------------------------------------\n\n");
 		printf("Mesh Convergence Test:\n\n");
 		printf("Output of Mesh convergence Test: %s\n", opts->outputFilename);
 		printf("Number of Threads Allocated: %d\n", opts->numCores);
@@ -73,9 +75,34 @@ int printOptions(options* opts){
 		printf("Maximum Iterations = %ld\n", opts->MAX_ITER);
 		printf("Convergence = %.10lf\n", opts->ConvergeCriteria);
 		printf("Maximum Mesh increase: %d\n", opts->MaxMesh);
-		printf("--------------------------------------\n");
+		printf("--------------------------------------\n\n");
+	} else if(opts->MeshFlag == 0 && opts->BatchFlag == 1){
+		printf("--------------------------------------\n\n");
+		printf("Running Image Batch:\n\n");
+		printf("Number of Threads Allocated: %d\n", opts->numCores);
+		printf("TC Fluid = %.2lf\n", opts->TCfluid);
+		printf("TC Solid = %.2lf\n", opts->TCsolid);
+		printf("Temperature Left = %.2lf\n", opts->TempLeft);
+		printf("Temperature Right = %.2lf\n", opts->TempRight);
+		printf("Mesh Amp. X = %d\n", opts->MeshIncreaseX);
+		printf("Mesh Amp. Y = %d\n", opts->MeshIncreaseY);
+		printf("Maximum Iterations = %ld\n", opts->MAX_ITER);
+		printf("Convergence = %.10lf\n", opts->ConvergeCriteria);
+		printf("Name of output file: %s\n", opts->outputFilename);
+		printf("Number of files to run: %d\n", opts->NumImg);
+		if (opts->printTmap == 1){
+			printf("Printing Temperature Distribution for all images.\n");
+		} else{
+			printf("No temperature maps will be printed.\n");
+		}
+		if (opts->printQmap == 1){
+			printf("Printing Heat Flux Distribution for all images.\n");
+		} else{
+			printf("No Heat Flux maps will be printed.\n");
+		}
+		printf("--------------------------------------\n\n");
 	} else{
-		printf("Please enter either 0 or 1 for Mesh Flag.\n");
+		printf("Options entered are not valid, code will exit.\n");
 		return 1;
 	}	
 
@@ -170,6 +197,10 @@ int readInputFile(char* FileName, options* opts){
 	 		opts->MeshFlag = (int)tempD;
 	 	} else if(strcmp(tempC, "MaxMesh:") == 0){
 	 		opts->MaxMesh = (int)tempD;
+	 	} else if(strcmp(tempC, "RunBatch:") == 0){
+	 		opts->BatchFlag = (int)tempD;
+	 	} else if(strcmp(tempC, "NumImages:") == 0){
+	 		opts->NumImg = (int)tempD;
 	 	}
 	}
 	
@@ -186,13 +217,64 @@ int readInputFile(char* FileName, options* opts){
 }
 
 int createOutput(options* o, double keff, double Q1, double Q2, long int iter, int nElements, double porosity, double time){
+	/*
+		createOutput Function:
+		Inputs:
+			- *o -> pointer to structure containing the options array.
+			- keff -> double with calculated keff
+			- Q1 -> heat flux through the left boundary
+			- Q2 -> heat flux through the right boundary
+			- iter -> number of iterations
+			- nElements -> total number of elements
+			- porosity -> calculated pixel based porosity
+			- time -> time in seconds
 
+		Outputs:
+			-None.
+
+		Function creates an output file, stored in the user entered address. The line of code below contains the correct order in which they are stored:
+
+		keff,QL,QR,Iter,ConvergeCriteria,inputName,nElements,MeshIncreaseX,MeshIncreaseY,porosity,ks,kf,tl,tr,time,nCores
+
+	*/
 
 	FILE *OUTPUT;
 
   OUTPUT = fopen(o->outputFilename, "a+");
   fprintf(OUTPUT, "%.10lf,%f,%f,%ld,%.10lf,%s,%d,%d,%d,%f,%f,%f,%f,%f,%f,%d\n",keff, Q1, Q2, iter, o->ConvergeCriteria, o->inputFilename,
   	nElements, o->MeshIncreaseX, o->MeshIncreaseY, porosity, o->TCsolid, o->TCfluid, o->TempLeft, o->TempRight, time, o->numCores);
+
+  fclose(OUTPUT);
+  return 0;
+}
+
+
+int createOutputBatch(options* o, double* Stats){
+	/*
+		createOutputBatch Function:
+		Inputs:
+			- *o -> pointer to structure containing the options array.
+			- *Stats -> pointer to array containing staatistics about each individual run using parallel computing.
+
+		Outputs:
+			-None.
+
+		Function creates an output file, stored in the user entered address. The line of code below contains the correct order in which they are stored:
+
+		keff,QL,QR,Iter,ConvergeCriteria,inputName,nElements,MeshIncreaseX,MeshIncreaseY,porosity,ks,kf,tl,tr,time,nCores
+
+	*/
+
+	FILE *OUTPUT;
+
+  OUTPUT = fopen(o->outputFilename, "a+");
+  char filename[100];
+  for(int i = 0; i< o->NumImg; i++){
+  	sprintf(filename,"%05d.jpg",i);
+  	fprintf(OUTPUT, "%.10lf,%f,%f,%ld,%.10lf,%s,%d,%d,%d,%f,%f,%f,%f,%f,%f,%d\n",Stats[i*7 + 0], Stats[i*7 + 1], Stats[i*7 + 2], (long int)Stats[i*7 + 3], o->ConvergeCriteria, filename,
+  		(int)Stats[i*7 + 4], o->MeshIncreaseX, o->MeshIncreaseY, Stats[i*7 + 6], o->TCsolid, o->TCfluid, o->TempLeft, o->TempRight, Stats[i*7 + 5], 1);
+  }
+  
 
   fclose(OUTPUT);
   return 0;
@@ -263,7 +345,7 @@ double WeightedHarmonicMean(double w1, double w2, double x1, double x2){
 	return H;
 }
 
-int printTMAP(options* o, double* x, int numRows, int numCols){
+int printTMAP(options* o, double* x, int numRows, int numCols, int imgNum){
 	/*
 		printTMAP:
 		Inputs:
@@ -271,14 +353,20 @@ int printTMAP(options* o, double* x, int numRows, int numCols){
 			- x -> pointer to temperature distribution map.
 			- numRows -> number of rows
 			- numCols -> number of columns
+			- imgNum: this option is only useful when running a batch, this is the image number.
 		Outputs:
 			- none
 		Function creates and saves a temperature map onto a .csv file
 	*/
 
 	FILE *T_OUT;
-
-  T_OUT = fopen(o->TMapName, "w+");
+	char filename[100];
+	if(o->BatchFlag == 0){
+		strcpy(filename, o->TMapName);
+	} else{
+		sprintf(filename, "TMAP_%05d.csv\n", imgNum);
+	}
+  T_OUT = fopen(filename, "w+");
   fprintf(T_OUT,"x,y,T\n");
 
   for(int i = 0; i<numRows; i++){
@@ -292,7 +380,7 @@ int printTMAP(options* o, double* x, int numRows, int numCols){
 }
 
 
-int printQMAP(options* o, double* x, double* K, int numRows, int numCols, double* xCenter, double* yCenter, double* qR, double* qL){
+int printQMAP(options* o, double* x, double* K, int numRows, int numCols, double* xCenter, double* yCenter, double* qR, double* qL, int imgNum){
 
 	/*
 		printQMAP:
@@ -305,6 +393,7 @@ int printQMAP(options* o, double* x, double* K, int numRows, int numCols, double
 			- yCenter = pointer to array with center of each cell (y-coordinate)
 			- qL = pointer to array heat transfer across the left boundary
 			- qR = pointer to array with heat transfer across the right boundary
+			- imgNum: this option is only useful when running a batch, this is the image number.
 		Outputs:
 			- none
 		Function creates and saves a heat flux map onto a .csv file.
@@ -312,7 +401,14 @@ int printQMAP(options* o, double* x, double* K, int numRows, int numCols, double
 
 
 	FILE *Q_OUT;
-	Q_OUT = fopen(o->QMapName, "w+");
+
+	char filename[100];
+	if(o->BatchFlag == 0){
+		strcpy(filename, o->QMapName);
+	} else{
+		sprintf(filename, "QMAP_%05d.csv\n",imgNum);
+	}
+	Q_OUT = fopen(filename, "w+");
 	fprintf(Q_OUT,"x,y,Q\n");
 
 	double localQ;
@@ -636,6 +732,7 @@ int ParallelGS(double *arr, double *sol, double *x_vec, double *qL, double *qR, 
 		- tR: temperature in the right boundary.
 		- *XC: pointer to vector containing the x-coordinate of the center of each cell (length numCols)
 		- *YC: pointer to vector containing the y-coordinate of the center of each cell (length numRows)
+		- nCores: integer, number of cores.
 
 	Outputs:
 		- int IterationCount
@@ -661,6 +758,96 @@ int ParallelGS(double *arr, double *sol, double *x_vec, double *qL, double *qR, 
 		#pragma omp parallel private(i, sigma)
 		#pragma omp for schedule(dynamic, numRows*numCols/nCores)
 		for(i = 0; i<numRows*numCols; i++){
+			sigma = 0;
+			for(int j = 1; j<5; j++){
+				if(arr[i*5 + j] != 0){
+					if(j == 1){
+						sigma += arr[i*5 + j]*x_vec[i - 1];
+					} else if(j == 2){
+						sigma += arr[i*5 + j]*x_vec[i + 1];
+					} else if(j == 3){
+						sigma += arr[i*5 + j]*x_vec[i + numCols];
+					} else if(j == 4){
+						sigma += arr[i*5 + j]*x_vec[i - numCols];
+					}
+				}
+			}
+			x_vec[i] = 1/arr[i*5 + 0]*(sol[i] - sigma);
+		}
+
+		iterCount++;
+		
+
+		if (iterCount % iterToCheck == 0){
+			Q1 = 0;
+			Q2 = 0;
+			for (int j = 0; j<numRows; j++){
+				double dy = YC[0]*2;
+				qL[j] = K[j*numRows]*dy*(x_vec[j*numCols] - tL)/(XC[0]);
+				qR[j] = K[(j + 1)*numRows - 1]*dy*(tR - x_vec[(j+1)*numCols -1])/(1 - XC[numCols - 1]);
+				Q1 += qL[j];
+				Q2 += qR[j];
+			}
+			Q1 = Q1;
+			Q2 = Q2;
+			qAvg = (Q1 + Q2)/2;
+			keffNew = qAvg/((tR - tL)/numRows);
+			percentChange = fabs((keffNew - keffOld)/keffOld);
+			keffOld = keffNew;
+
+			if (percentChange < 0.001){
+				iterToCheck = 100;
+			} else if(percentChange < 0.0001){
+				iterToCheck = 10;
+			}
+		}
+	}
+	return iterCount;
+}
+
+
+int SerialGS(double *arr, double *sol, double *x_vec, double *qL, double *qR, double *K, long int iterLimit, double tolerance, int numCols, int numRows,
+	double tL, double tR, double *XC, double *YC){
+	/*
+	Function SerialGS:
+	Inputs:
+		- *arr: pointer to the discretization matrix, size (numCols*numRows, 5)
+		- *sol: pointert to the RHS, size (numCols*numRows)
+		- *x_vec: pointer to the solution vector, size (numCols*numRows)
+		- *qL: pointer a vector of size (numRows) containing heat flux from each cell
+			at the left side of the domain.
+		- *qR: pointer a vector of size (numRows) containing heat flux from each cell
+			at the right side of the domain.
+		- *K: vector containing the thermal conductivity of each cell in the domain.
+		- iterLimit: integer with the maximum number of allowed iterations
+		- tolerance: value of convergence criteria
+		- numCols: numCols of the domain
+		- numRows: numRows of the domain
+		- tL: temperature in the left boundary.
+		- tR: temperature in the right boundary.
+		- *XC: pointer to vector containing the x-coordinate of the center of each cell (length numCols)
+		- *YC: pointer to vector containing the y-coordinate of the center of each cell (length numRows)
+
+	Outputs:
+		- int IterationCount
+
+	Gauss-Seidel iteration implemented in serial. This function is specifically
+	meant for the 5 diagonal discretization. 
+
+	*/
+	int iterCount = 0;
+	double sigma = 0;
+	double norm_diff = 1;
+	double percentChange = 1;
+	double keffOld = 1;
+	double keffNew = 1;
+	int iterToCheck = 1000;
+	double Q1,Q2;
+	double qAvg = 0;
+	
+
+	while(percentChange > tolerance && iterCount < iterLimit){
+		for(int i = 0; i<numRows*numCols; i++){
 			sigma = 0;
 			for(int j = 1; j<5; j++){
 				if(arr[i*5 + j] != 0){
