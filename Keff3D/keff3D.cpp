@@ -24,6 +24,9 @@ int main(int argc, char const *argv[])
 	double k_Fluid = 1;
 	double k_Solid = 10.0;
 
+	long int iterLimit = 100000;
+	double thresh = 0.00001;
+
 	double TR = 1;
 	double TL = 0;
 
@@ -121,7 +124,17 @@ int main(int argc, char const *argv[])
 
 	// Discretize
 
+	DiscretizeMatrixCD3D(k_Matrix, numCellsY, numCellsX, numCellsZ, CoeffMatrix, RHS, TL, TR, xCenters, yCenters, zCenters);
+
+	printf("Done discretizing, solving now.\n");
+
+	SolInitLinear(TemperatureDist, TL, TR, numCellsX, numCellsY, numCellsZ);
+
+	ParallelGS3D(CoeffMatrix, RHS, TemperatureDist, QL, QR, k_Matrix, iterLimit, thresh, numCellsX, numCellsY,
+	numCellsZ, TL, TR, xCenters, yCenters, zCenters, numThreads);
 	
+
+	printf("Done solving.\n");
 
 
 
