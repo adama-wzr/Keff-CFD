@@ -7,6 +7,8 @@ int main(int argc, char const *argv[])
 	int numThreads;
 	double startTime, runTime;
 
+	options opts;
+
 	startTime = omp_get_wtime();
 
 	fflush(stdout);
@@ -35,8 +37,13 @@ int main(int argc, char const *argv[])
 	int Depth = 128;
 
 	char filename[100];
+	char inputName[100];
+
+	sprintf(inputName,"input.txt");
 
 	sprintf(filename, "Schwarz163.csv");
+
+	readInputFile(inputName, &opts);
 
 	// Declare strructure, set all to fluid
 

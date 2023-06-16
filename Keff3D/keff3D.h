@@ -13,8 +13,12 @@
 typedef struct{
   double TCsolid;
   double TCfluid;
+  int Width;
+  int Height;
+  int Depth;
   int MeshIncreaseX;
   int MeshIncreaseY;
+  int MeshIncreaseZ;
   double TempLeft;
   double TempRight;
   long int MAX_ITER;
@@ -44,6 +48,7 @@ int printOptions(options* opts){
 		printf("TC Solid = %.2lf\n", opts->TCsolid);
 		printf("Temperature Left = %.2lf\n", opts->TempLeft);
 		printf("Temperature Right = %.2lf\n", opts->TempRight);
+		printf("Domain Width = %d, Height = %d, Depth = %d\n",opts->Width, opts->Height, opts->Depth);
 		printf("Mesh Amp. X = %d\n", opts->MeshIncreaseX);
 		printf("Mesh Amp. Y = %d\n", opts->MeshIncreaseY);
 		printf("Maximum Iterations = %ld\n", opts->MAX_ITER);
@@ -142,11 +147,23 @@ int readInputFile(char* FileName, options* opts){
 	 	}else if(strcmp(tempC, "kf:") == 0){
 	 		opts->TCfluid = tempD;
 
+	 	}else if(strcmp(tempC, "Width:") == 0){
+	 		opts->Width = (int)tempD;
+
+	 	}else if(strcmp(tempC, "Height:") == 0){
+	 		opts->Height = (int)tempD;
+
+	 	}else if(strcmp(tempC, "Depth:") == 0){
+	 		opts->Depth = (int)tempD;
+
 	 	}else if(strcmp(tempC, "MeshAmpX:") == 0){
 	 		opts->MeshIncreaseX = (int)tempD;
 
 	 	}else if(strcmp(tempC, "MeshAmpY:") == 0){
 	 		opts->MeshIncreaseY = (int)tempD;
+
+	 	}else if(strcmp(tempC, "MeshAmpZ:") == 0){
+	 		opts->MeshIncreaseZ = (int)tempD;
 
 	 	}else if(strcmp(tempC, "InputName:") == 0){
 	 		sscanf(myText.c_str(), "%s %s", tempC, tempFilenames);
@@ -408,12 +425,11 @@ int SolInitLinear(double *xVec, double tL, double tR, int numCols, int numRows, 
 	for(int i = 0; i<numSlices; i++){
 		for(int j = 0; j<numRows; j++){
 			for(int k = 0; k<numCols; k++){
-				xVec[i*numCols*numSlices + j*numCols + k] = 0;
-				// if(tR > tL){
-				// 	xVec[i*numCols*numSlices + j*numCols + k] = 1/numCols*k*(tR - tL) + tL;
-				// } else if(tR < tL){
-				// 	xVec[i*numCols*numSlices + j*numCols + k] = 1/numCols*(numCols - (k+1))*(tL - tR) + tR;
-				// }
+				if(tR > tL){
+					xVec[i*numCols*numSlices + j*numCols + k] = 1/numCols*k*(tR - tL) + tL;
+				} else if(tR < tL){
+					xVec[i*numCols*numSlices + j*numCols + k] = 1/numCols*(numCols - (k+1))*(tL - tR) + tR;
+				}
 			}
 		}
 	}
