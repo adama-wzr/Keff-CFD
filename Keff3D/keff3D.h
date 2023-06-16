@@ -233,20 +233,21 @@ int readImage3D(unsigned char* structureAddress, int width, int height, int dept
 		allocated array.
 	*/
 
-	int *x = (int *)malloc(sizeof(int)*width*height*depth);
-    int *y = (int *)malloc(sizeof(int)*width*height*depth);
-    int *z = (int *)malloc(sizeof(int)*width*height*depth);
 
-    FILE *target_data;
+	int *x = (int *)malloc(sizeof(int)*width*height*depth);
+  int *y = (int *)malloc(sizeof(int)*width*height*depth);
+  int *z = (int *)malloc(sizeof(int)*width*height*depth);
+
+  FILE *target_data;
 
 	target_data = fopen(filename, "r");
 
 	size_t count = 0;
 
 	if (target_data == NULL) {
-        fprintf(stderr, "Error reading file\n");
-        return 1;
-    }
+    fprintf(stderr, "Error reading file\n");
+    return 1;
+  }
 
     while(fscanf(target_data, " %d,%d,%d", &x[count], &y[count], &z[count]) == 3) {
 		count++;
@@ -359,7 +360,7 @@ int ParallelGS3D(double *arr, double *sol, double *x_vec, double *qL, double *qR
 			for(int j = 0; j<numSlices; j++){
 				for(int k = 0; k<numRows; k++){
 					qL[j*numRows + k] = K[j*numRows*numCols + k*numCols]*dy*dz*(x_vec[j*numRows*numCols + k*numCols] - tL)/dx;
-					qR[j*numRows + k] = K[j*numRows*numCols + k*numCols + numCols - 1]*dy*dz*(tR - x_vec[j*numRows*numCols + k*numCols + numCols - 1])/dx;
+					qR[j*numRows + k] = K[j*numRows*numCols + (k+1)*numCols - 1]*dy*dz*(tR - x_vec[j*numRows*numCols + (k+1)*numCols - 1])/dx;
 
 					Q1+=qL[j*numRows + k];
 					Q2+=qR[j*numRows + k];
@@ -380,6 +381,7 @@ int ParallelGS3D(double *arr, double *sol, double *x_vec, double *qL, double *qR
 			}
 
 			printf("Iteration = %d, Keff = %f\n", iterCount, keffNew);
+			printf("Q1 = %f, Q2 = %f\n", Q1, Q2);
 		}
 	}
 	printf("Keff = %f\n", keffNew);
@@ -406,11 +408,12 @@ int SolInitLinear(double *xVec, double tL, double tR, int numCols, int numRows, 
 	for(int i = 0; i<numSlices; i++){
 		for(int j = 0; j<numRows; j++){
 			for(int k = 0; k<numCols; k++){
-				if(tR > tL){
-					xVec[i*numCols*numSlices + j*numCols + k] = 1/numCols*k*(tR - tL) + tL;
-				} else if(tR < tL){
-					xVec[i*numCols*numSlices + j*numCols + k] = 1/numCols*(numCols - (k+1))*(tL - tR) + tR;
-				}
+				xVec[i*numCols*numSlices + j*numCols + k] = 0;
+				// if(tR > tL){
+				// 	xVec[i*numCols*numSlices + j*numCols + k] = 1/numCols*k*(tR - tL) + tL;
+				// } else if(tR < tL){
+				// 	xVec[i*numCols*numSlices + j*numCols + k] = 1/numCols*(numCols - (k+1))*(tL - tR) + tR;
+				// }
 			}
 		}
 	}
@@ -514,6 +517,25 @@ int DiscretizeMatrixCD3D(double* K, int numRows, int numCols, int numSlices, dou
 			}
 		}
 	}
+
+
+	// FILE  *T_FIELD;
+
+	// T_FIELD = fopen("Schwarz163_Coeff.csv", "w+");
+
+	// fprintf(T_FIELD, "P,W,E,S,N,F,B\n");
+
+	// for(int i = 0; i< numSlices; i++){
+	// 	for(int j = 0; j<numRows; j++){
+	// 		for(int k = 0; k<numCols; k++){
+	// 			index = i*numCols*numRows + j*numCols + k;
+	// 			fprintf(T_FIELD, "%f,%f,%f,%f,%f,%f,%f\n", A[index*7 + 0], A[index*7 + 1], A[index*7 + 2], A[index*7 + 3], A[index*7 + 4], A[index*7 +5], A[index*7 + 6]);
+	// 		}
+	// 	}
+	// }
+
+	// fclose(T_FIELD);
+
 
 	return 0;
 }

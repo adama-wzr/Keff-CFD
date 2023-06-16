@@ -80,7 +80,7 @@ int main(int argc, char const *argv[])
 	double *zCenters = (double *)malloc(sizeof(double)*numCellsZ);
 
 	for(int i = 0; i<numCellsX; i++){
-		xCenters[i] = (double)i*(1.0/numCellsX) + 0.5*(1.0/numCellsX);
+		xCenters[i] = (double)i*(1.0) + 0.5*(1.0/numCellsX);
 	}
 
 	for(int i = 0; i<numCellsY; i++){
@@ -103,14 +103,14 @@ int main(int argc, char const *argv[])
 		for(int j = 0; j<numCellsY; j++){
 			QL[i*Height + j] = 0;
 			QR[i*Height + j] = 0;
-			for(int k = 0; k<numCellsZ; k++){
+			for(int k = 0; k<numCellsX; k++){
 				int targetIndCol = k/AmpFactorX;
 				int targetIndRow = j/AmpFactorY;
 				int targetIndSlice = i/AmpFactorZ;
 				if(myStructure[targetIndSlice*Width*Height + targetIndRow*Width + targetIndCol] == 1){
-					k_Matrix[i*numCellsY*numCellsX + j*numCellsX + k] = k_Fluid;
-				} else{
 					k_Matrix[i*numCellsY*numCellsX + j*numCellsX + k] = k_Solid;
+				} else{
+					k_Matrix[i*numCellsY*numCellsX + j*numCellsX + k] = k_Fluid;
 				}
 			}
 		}
@@ -136,7 +136,21 @@ int main(int argc, char const *argv[])
 
 	printf("Done solving.\n");
 
+	FILE  *T_FIELD;
 
+	T_FIELD = fopen("Schwarz163_K.csv", "w+");
+
+	fprintf(T_FIELD, "x,y,z,K\n");
+
+	for(int i = 0; i< numCellsZ; i++){
+		for(int j = 0; j< numCellsY; j++){
+			for(int k = 0; k<numCellsX; k++){
+				fprintf(T_FIELD, "%d,%d,%d,%f\n", k, j, i, k_Matrix[i*numCellsX*numCellsY + j*numCellsX + k]);
+			}
+		}
+	}
+
+	fclose(T_FIELD);
 
 
 	return 0;
