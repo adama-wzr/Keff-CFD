@@ -8,42 +8,30 @@ int main(int argc, char const *argv[])
 	double startTime, runTime;
 
 	options opts;
+	char inputName[100];
+	sprintf(inputName,"input.txt");
+	readInputFile(inputName, &opts);
 
 	startTime = omp_get_wtime();
 
 	fflush(stdout);
 
-	if(argc == 1){
-		printf("Number of threads set to default = 1.\n");
-		numThreads = 1;
-		omp_set_num_threads(numThreads);
-	} else{
-		numThreads = strtol(argv[1], NULL, 10);
-		printf("Number of Threads = %d\n", numThreads);
-		omp_set_num_threads(numThreads);
-	}
+	numThreads = opts.numCores;
 
-	double k_Fluid = 1;
-	double k_Solid = 10.0;
+	double k_Fluid = opts.TCfluid;
+	double k_Solid = opts.TCsolid;
 
-	long int iterLimit = 100000;
-	double thresh = 0.00001;
+	long int iterLimit = opts.MAX_ITER;
+	double thresh = opts.ConvergeCriteria;
 
-	double TR = 1;
-	double TL = 0;
+	double TR = opts.TempRight;
+	double TL = opts.TempLeft;
 
-	int Width = 128;
-	int Height = 128;
-	int Depth = 128;
+	int Width = opts.Width;
+	int Height = opts.Height;
+	int Depth = opts.Depth;
 
 	char filename[100];
-	char inputName[100];
-
-	sprintf(inputName,"input.txt");
-
-	sprintf(filename, "Schwarz163.csv");
-
-	readInputFile(inputName, &opts);
 
 	// Declare strructure, set all to fluid
 
@@ -59,7 +47,7 @@ int main(int argc, char const *argv[])
 
 	// Read input file
 
-	readImage3D(myStructure, Width, Height, Depth, filename);
+	readImage3D(myStructure, Width, Height, Depth, opts.inputFilename);
 
 	// Mesh Options and size
 
