@@ -459,7 +459,7 @@ int printTMAP(options* o, double* x, int numRows, int numCols, int numSlices, in
 
 
 int ParallelGS3D(double *arr, double *sol, double *x_vec, double *qL, double *qR, double *K, long int iterLimit, double tolerance, int numCols, int numRows,
-	int numSlices, double tL, double tR, double *XC, double *YC, double *ZC, int nCores){
+	int numSlices, double tL, double tR, double *XC, double *YC, double *ZC, int nCores, options* opts){
 	/*
 	Function ParallelGS3D:
 	Inputs:
@@ -558,12 +558,11 @@ int ParallelGS3D(double *arr, double *sol, double *x_vec, double *qL, double *qR
 			} else if(percentChange < 0.0001){
 				iterToCheck = 10;
 			}
-
-			printf("Iteration = %d, Keff = %f\n", iterCount, keffNew);
-			printf("Q1 = %f, Q2 = %f\n", Q1, Q2);
+			if(opts->verbose == 1){
+				printf("Iteration = %d, Keff = %f, Convergence = %f\n", iterCount, keffNew, percentChange);
+			}
 		}
 	}
-	printf("Keff = %f\n", keffNew);
 	return iterCount;
 }
 

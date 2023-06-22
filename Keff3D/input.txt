@@ -10,7 +10,7 @@ MeshAmpZ: 1
 InputName: Schwarz163.csv
 TR: 1
 TL: 0
-OutputName: Schwarz163_Output.csv
+OutputName: outputSample.csv
 printTMap: 1
 TMapName: Schwarz163_T.csv
 printQMap: 1

@@ -52,7 +52,7 @@ int main(int argc, char const *argv[])
 	double porosity = calcPorosity3D(myStructure, Width, Height, Depth, &opts);
 
 	if(opts.verbose == 1){
-		std::cout << "Widht" << Width << "Height" << Height << "Depth" << Depth << std::endl;
+		std::cout << "Widht: " << Width << " Height: " << Height << " Depth: " << Depth << std::endl;
 		std::cout << "Porosity" << porosity << std::endl;
 	}
 
@@ -139,7 +139,7 @@ int main(int argc, char const *argv[])
 	}
 
 	int iterTaken = ParallelGS3D(CoeffMatrix, RHS, TemperatureDist, QL, QR, k_Matrix, iterLimit, thresh, numCellsX, numCellsY,
-	numCellsZ, TL, TR, xCenters, yCenters, zCenters, numThreads);
+	numCellsZ, TL, TR, xCenters, yCenters, zCenters, numThreads, &opts);
 
 	double Q1 = 0;
 	double Q2 = 0;
@@ -162,7 +162,13 @@ int main(int argc, char const *argv[])
 	double k_eff = qAvg/(TR-TL);
 
 	if(opts.verbose == 1){
-		std::cout << "Effective Thermal Conductivity" << k_eff << std::endl;
+		std::cout << "Done." << std::endl;
+	}
+
+	printf("--------------------------------------\n\n");
+
+	if(opts.verbose == 1){
+		std::cout << "Effective Thermal Conductivity = " << k_eff << std::endl;
 	}
 
 	if(opts.printTmap == 1){
@@ -170,7 +176,7 @@ int main(int argc, char const *argv[])
 	}
 
 	if(opts.printQmap == 1){
-		printf("Feature not currently available.\n");
+		printf("Heat Flux Map: Feature not currently available.\n");
 	}
 
 	runTime = omp_get_wtime() - startTime;
