@@ -329,6 +329,37 @@ double WeightedHarmonicMean(double w1, double w2, double x1, double x2){
 }
 
 
+int createOutputBatch(options* o, double* Stats){
+	/*
+		createOutputBatch Function:
+		Inputs:
+			- *o -> pointer to structure containing the options array.
+			- *Stats -> pointer to array containing statistics about each individual run using parallel computing.
+
+		Outputs:
+			-None.
+
+		Function creates an output file, stored in the user entered address. The line of code below contains the correct order in which they are stored:
+
+		keff,QL,QR,Iter,ConvergeCriteria,inputName,nElements,MeshIncreaseX,MeshIncreaseY,porosity,ks,kf,tl,tr,time,nCores
+
+	*/
+
+	FILE *OUTPUT;
+
+  OUTPUT = fopen(o->outputFilename, "a+");
+  char filename[100];
+  for(int i = 0; i< o->NumImg; i++){
+  	sprintf(filename,"%05d.csv",i);
+  	fprintf(OUTPUT, "%.10lf,%f,%f,%ld,%.10lf,%s,%d,%d,%d,%d,%f,%f,%f,%f,%f,%f,%d\n",Stats[i*7 + 0], Stats[i*7 + 1], Stats[i*7 + 2], (long int)Stats[i*7 + 3], o->ConvergeCriteria, filename,
+  		(int)Stats[i*7 + 4], o->MeshIncreaseX, o->MeshIncreaseY, o->MeshIncreaseZ, Stats[i*7 + 6], o->TCsolid, o->TCfluid, o->TempLeft, o->TempRight, Stats[i*7 + 5], 1);
+  }
+  
+
+  fclose(OUTPUT);
+  return 0;
+}
+
 
 double calcPorosity3D(unsigned char* imageAddress, int Width, int Height, int Depth, options* opts){
 	/*
@@ -595,6 +626,42 @@ int SolInitLinear(double *xVec, double tL, double tR, int numCols, int numRows, 
 		}
 	}
 
+	return 0;
+}
+
+
+int SolExpandSimple(double *OGTemperature, double *ExpandedT, int NativeWidth, int NativeHeight, int NativeDepth, int AmpFactor){
+	/*
+	Function SolExpandSimple:
+	Inputs:
+		- *OGTemperature: pointer to the solution temperature map of the original mesh size
+		- *ExpandedT: pointer to array that will receive the new temperature distribution
+				and use it as initial guess at the solution.
+		- int NativeWidth: width of the original solution
+		- int NativeHeight: height of the original solution
+		- int NativeDepth: depth of original solution
+		- int AmpFactor: increase in size from the original
+
+	Outputs: none
+
+	SolExpandSimple grabs the final solution temperature distribution and simply expands
+	it onto a larger mesh. No calculations or interpolation is done, this is just to roughly
+	initialize it close to a solution.
+	*/
+
+	for(int i = 0; i<NativeDepth*AmpFactor; i++){
+		for(int j = 0; j< NativeHeight*AmpFactor; j++){
+			for(int k = 0; k<NativeWidth*AmpFactor; k++){
+				int targetIndexSlice = i/AmpFactor;
+				int targetIndexRow = j/AmpFactor;
+				int targetIndexCol = k/AmpFactor;
+
+				ExpandedT[i*(NativeWidth*NativeHeight*AmpFactor*AmpFactor) + j*(NativeWidth*AmpFactor) + k] = 
+					OGTemperature[targetIndexSlice*NativeWidth*NativeHeight + targetIndexRow*NativeWidth + targetIndexCol];
+			}
+		}
+	}
+	
 	return 0;
 }
 
