@@ -49,6 +49,13 @@ int main(int argc, char const *argv[])
 
 	readImage3D(myStructure, Width, Height, Depth, opts.inputFilename);
 
+	double porosity = calcPorosity3D(myStructure, Width, Height, Depth, &opts);
+
+	if(opts.verbose == 1){
+		std::cout << "Widht" << Width << "Height" << Height << "Depth" << Depth << std::endl;
+		std::cout << "Porosity" << porosity << std::endl;
+	}
+
 	// Mesh Options and size
 
 	int AmpFactorX = 1;
@@ -119,33 +126,56 @@ int main(int argc, char const *argv[])
 
 	// Discretize
 
-	DiscretizeMatrixCD3D(k_Matrix, numCellsY, numCellsX, numCellsZ, CoeffMatrix, RHS, TL, TR, xCenters, yCenters, zCenters);
+	if(opts.verbose == 1){
+		std::cout << "Discretizing" << std::endl;
+	}
 
-	printf("Done discretizing, solving now.\n");
+	DiscretizeMatrixCD3D(k_Matrix, numCellsY, numCellsX, numCellsZ, CoeffMatrix, RHS, TL, TR, xCenters, yCenters, zCenters);
 
 	SolInitLinear(TemperatureDist, TL, TR, numCellsX, numCellsY, numCellsZ);
 
-	ParallelGS3D(CoeffMatrix, RHS, TemperatureDist, QL, QR, k_Matrix, iterLimit, thresh, numCellsX, numCellsY,
+	if(opts.verbose == 1){
+		std::cout << "Solving" << std::endl;
+	}
+
+	int iterTaken = ParallelGS3D(CoeffMatrix, RHS, TemperatureDist, QL, QR, k_Matrix, iterLimit, thresh, numCellsX, numCellsY,
 	numCellsZ, TL, TR, xCenters, yCenters, zCenters, numThreads);
-	
 
-	printf("Done solving.\n");
+	double Q1 = 0;
+	double Q2 = 0;
+	double dx = xCenters[0];
+	double dy = yCenters[0]*2;
+	double dz = zCenters[0]*2;
+	for(int j = 0; j<numCellsZ; j++){
+		for(int k = 0; k<numCellsY; k++){
+			QL[j*numCellsY + k] = k_Matrix[j*numCellsY*numCellsX + k*numCellsX]*dy*dz*(TemperatureDist[j*numCellsY*numCellsX + k*numCellsX] - TL)/dx;
+			QR[j*numCellsY + k] = k_Matrix[j*numCellsY*numCellsX + (k+1)*numCellsX - 1]*dy*dz*(TR - TemperatureDist[j*numCellsY*numCellsX + (k+1)*numCellsX - 1])/dx;
 
-	FILE  *T_FIELD;
-
-	T_FIELD = fopen("Schwarz163_K.csv", "w+");
-
-	fprintf(T_FIELD, "x,y,z,K\n");
-
-	for(int i = 0; i< numCellsZ; i++){
-		for(int j = 0; j< numCellsY; j++){
-			for(int k = 0; k<numCellsX; k++){
-				fprintf(T_FIELD, "%d,%d,%d,%f\n", k, j, i, k_Matrix[i*numCellsX*numCellsY + j*numCellsX + k]);
-			}
+			Q1+=QL[j*numCellsY + k];
+			Q2+=QR[j*numCellsY + k];
 		}
 	}
 
-	fclose(T_FIELD);
+	Q1 = Q1;
+	Q2 = Q2;
+	double qAvg = (Q1 + Q2)/2;
+	double k_eff = qAvg/(TR-TL);
+
+	if(opts.verbose == 1){
+		std::cout << "Effective Thermal Conductivity" << k_eff << std::endl;
+	}
+
+	if(opts.printTmap == 1){
+		printTMAP(&opts, TemperatureDist, numCellsY, numCellsX, numCellsZ, 0);
+	}
+
+	if(opts.printQmap == 1){
+		printf("Feature not currently available.\n");
+	}
+
+	runTime = omp_get_wtime() - startTime;
+
+	createOutput(&opts, k_eff, Q1, Q2, iterTaken, nElements, porosity, runTime);
 
 
 	return 0;

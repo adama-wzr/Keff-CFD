@@ -280,6 +280,39 @@ int readImage3D(unsigned char* structureAddress, int width, int height, int dept
 }
 
 
+int createOutput(options* o, double keff, double Q1, double Q2, long int iter, int nElements, double porosity, double time){
+	/*
+		createOutput Function:
+		Inputs:
+			- *o -> pointer to structure containing the options array.
+			- keff -> double with calculated keff
+			- Q1 -> heat flux through the left boundary
+			- Q2 -> heat flux through the right boundary
+			- iter -> number of iterations
+			- nElements -> total number of elements
+			- porosity -> calculated pixel based porosity
+			- time -> time in seconds
+
+		Outputs:
+			-None.
+
+		Function creates an output file, stored in the user entered address. The line of code below contains the correct order in which they are stored:
+
+		keff,QL,QR,Iter,ConvergeCriteria,inputName,nElements,MeshIncreaseX,MeshIncreaseY,porosity,ks,kf,tl,tr,time,nCores
+
+	*/
+
+	FILE *OUTPUT;
+
+  OUTPUT = fopen(o->outputFilename, "a+");
+  fprintf(OUTPUT, "%.10lf,%f,%f,%ld,%.10lf,%s,%d,%d,%d,%d,%f,%f,%f,%f,%f,%f,%d\n",keff, Q1, Q2, iter, o->ConvergeCriteria, o->inputFilename,
+  	nElements, o->MeshIncreaseX, o->MeshIncreaseY, o->MeshIncreaseZ, porosity, o->TCsolid, o->TCfluid, o->TempLeft, o->TempRight, time, o->numCores);
+
+  fclose(OUTPUT);
+  return 0;
+}
+
+
 double WeightedHarmonicMean(double w1, double w2, double x1, double x2){
 	/*
 		WeightedHarmonicMean Function:
@@ -293,6 +326,135 @@ double WeightedHarmonicMean(double w1, double w2, double x1, double x2){
 	*/
 	double H = (w1 + w2)/(w1/x1 + w2/x2);
 	return H;
+}
+
+
+
+double calcPorosity3D(unsigned char* imageAddress, int Width, int Height, int Depth, options* opts){
+	/*
+		calcPorosity3D
+		Inputs:
+			- imageAddress: pointer to the read image.
+			- Width: Number of cols
+			- Height: number of rows
+			- Depth: number of slices
+			- opts: pointer to options struc
+
+		Output:
+			- porosity: double containing porosity.
+
+		Function calculates porosity by counting pixels.
+	*/
+
+	double totalCells = (double)Height*Width*Depth;
+	double porosity = 0;
+
+	for(int i = 0; i<Depth; i++){
+		for(int j = 0; j<Height; j++){
+			for(int k = 0; k<Width; k++){
+				if(imageAddress[i*Height*Width + j*Width + k] == opts->TCfluid){
+					porosity += 1.0/totalCells;
+				}
+			}
+		}
+	}
+
+	return porosity;
+}
+
+
+int printQMAP(options* o, double* x, double* K, int numRows, int numCols, int numSlices, double* xCenter, double* yCenter, double* zCenter, double* qR, double* qL, int imgNum){
+
+	/*
+		printQMAP:
+		Inputs:
+			- o -> options datastructure
+			- x -> pointer to temperature distribution map.
+			- numRows -> number of rows
+			- numCols -> number of columns
+			- numSlices -> number of slices
+			- xCenter = pointer to array with center of each cell (x-coordinate)
+			- yCenter = pointer to array with center of each cell (y-coordinate)
+			- qL = pointer to array heat transfer across the left boundary
+			- qR = pointer to array with heat transfer across the right boundary
+			- imgNum: this option is only useful when running a batch, this is the image number.
+		Outputs:
+			- none
+		Function creates and saves a heat flux map onto a .csv file.
+	*/
+
+
+	FILE *Q_OUT;
+
+	char filename[100];
+	if(o->BatchFlag == 0){
+		strcpy(filename, o->QMapName);
+	} else{
+		sprintf(filename, "QMAP_%05d.csv\n",imgNum);
+	}
+	Q_OUT = fopen(filename, "w+");
+	fprintf(Q_OUT,"x,y,Q\n");
+
+	double localQ;
+	double localK;
+	double dy = yCenter[2] - yCenter[1];
+	double dx = xCenter[2] - xCenter[1];
+	double dz = zCenter[2] - zCenter[1];
+
+	for(int i = 0; i<numRows; i++){
+		for(int j = 0; j<numCols + 1; j++){
+			if(j == 0){
+				fprintf(Q_OUT,"%d,%d,%f\n",j,i, qL[i]);
+			} else if(j == numCols){
+				fprintf(Q_OUT, "%d,%d,%f\n",j,i, qR[i]);
+			} else{
+				localK = WeightedHarmonicMean(dx/2, dx/2, K[i*numCols + j], K[i*numCols + j - 1]);
+				localQ = dy/dx*localK*(x[i*numCols + j] - x[i*numCols + j - 1]);
+				fprintf(Q_OUT, "%d,%d,%f\n",j,i, localQ);
+			}
+		}
+	}
+
+	fclose(Q_OUT);
+	return 0;
+}
+
+
+int printTMAP(options* o, double* x, int numRows, int numCols, int numSlices, int imgNum){
+	/*
+		printTMAP:
+		Inputs:
+			- o -> options datastructure
+			- x -> pointer to temperature distribution map.
+			- numRows -> number of rows
+			- numCols -> number of columns
+			- numSlices -> number of slices
+			- imgNum: this option is only useful when running a batch, this is the image number.
+		Outputs:
+			- none
+		Function creates and saves a temperature map onto a .csv file
+	*/
+
+	FILE *T_OUT;
+	char filename[100];
+	if(o->BatchFlag == 0){
+		strcpy(filename, o->TMapName);
+	} else{
+		sprintf(filename, "TMAP_%05d.csv\n", imgNum);
+	}
+  T_OUT = fopen(filename, "w+");
+  fprintf(T_OUT,"x,y,z,T\n");
+
+  for(int i = 0; i<numSlices; i++){
+		for(int j = 0; j<numRows; j++){
+			for(int k = 0; k<numCols; k++){
+				fprintf(T_OUT,"%d,%d,%d,%f\n",k,j,i,x[i*numCols*numRows + j*numCols + k]);
+			}
+		}
+	}
+
+  fclose(T_OUT);
+  return 0;
 }
 
 
@@ -533,25 +695,6 @@ int DiscretizeMatrixCD3D(double* K, int numRows, int numCols, int numSlices, dou
 			}
 		}
 	}
-
-
-	// FILE  *T_FIELD;
-
-	// T_FIELD = fopen("Schwarz163_Coeff.csv", "w+");
-
-	// fprintf(T_FIELD, "P,W,E,S,N,F,B\n");
-
-	// for(int i = 0; i< numSlices; i++){
-	// 	for(int j = 0; j<numRows; j++){
-	// 		for(int k = 0; k<numCols; k++){
-	// 			index = i*numCols*numRows + j*numCols + k;
-	// 			fprintf(T_FIELD, "%f,%f,%f,%f,%f,%f,%f\n", A[index*7 + 0], A[index*7 + 1], A[index*7 + 2], A[index*7 + 3], A[index*7 + 4], A[index*7 +5], A[index*7 + 6]);
-	// 		}
-	// 	}
-	// }
-
-	// fclose(T_FIELD);
-
 
 	return 0;
 }
