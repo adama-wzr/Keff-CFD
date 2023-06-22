@@ -254,7 +254,7 @@ int createOutputBatch(options* o, double* Stats){
 		createOutputBatch Function:
 		Inputs:
 			- *o -> pointer to structure containing the options array.
-			- *Stats -> pointer to array containing staatistics about each individual run using parallel computing.
+			- *Stats -> pointer to array containing statistics about each individual run using parallel computing.
 
 		Outputs:
 			-None.
@@ -270,7 +270,7 @@ int createOutputBatch(options* o, double* Stats){
   OUTPUT = fopen(o->outputFilename, "a+");
   char filename[100];
   for(int i = 0; i< o->NumImg; i++){
-  	sprintf(filename,"%05d.jpg",i);
+  	sprintf(filename,"%05d.csv",i);
   	fprintf(OUTPUT, "%.10lf,%f,%f,%ld,%.10lf,%s,%d,%d,%d,%f,%f,%f,%f,%f,%f,%d\n",Stats[i*7 + 0], Stats[i*7 + 1], Stats[i*7 + 2], (long int)Stats[i*7 + 3], o->ConvergeCriteria, filename,
   		(int)Stats[i*7 + 4], o->MeshIncreaseX, o->MeshIncreaseY, Stats[i*7 + 6], o->TCsolid, o->TCfluid, o->TempLeft, o->TempRight, Stats[i*7 + 5], 1);
   }
