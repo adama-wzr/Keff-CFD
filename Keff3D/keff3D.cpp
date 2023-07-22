@@ -354,6 +354,8 @@ int main(int argc, char const *argv[])
 
 			char filename[100];
 
+			sprintf(filename, "%05d.csv", img);
+
 			// Declare strructure, set all to fluid
 
 			unsigned char *myStructure = (unsigned char*)malloc(sizeof(unsigned char)*Height*Width*Depth);
@@ -368,7 +370,7 @@ int main(int argc, char const *argv[])
 
 			// Read input file
 
-			readImage3D(myStructure, Width, Height, Depth, opts.inputFilename);
+			readImage3D(myStructure, Width, Height, Depth, filename);
 
 			double porosity = calcPorosity3D(myStructure, Width, Height, Depth, &opts);
 

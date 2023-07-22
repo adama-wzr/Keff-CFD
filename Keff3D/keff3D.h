@@ -589,9 +589,6 @@ int ParallelGS3D(double *arr, double *sol, double *x_vec, double *qL, double *qR
 			} else if(percentChange < 0.0001){
 				iterToCheck = 10;
 			}
-			if(opts->verbose == 1){
-				printf("Iteration = %d, Keff = %f, Convergence = %f\n", iterCount, keffNew, percentChange);
-			}
 		}
 	}
 	return iterCount;
