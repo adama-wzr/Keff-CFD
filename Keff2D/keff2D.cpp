@@ -183,6 +183,10 @@ int main(int argc, char const *argv[])
 
 		run_time = omp_get_wtime() - start_time;
 
+		double res = Residual(numCellsY, numCellsX, &opts, TemperatureDist, kMatrix);
+
+		printf("Residual = %f\n", res);
+
 		createOutput(&opts, k_eff, Q1, Q2, iterTaken, nElements, porosity, run_time);
 
 	    printf("Time spent = %lf\n", run_time);

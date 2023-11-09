@@ -380,6 +380,49 @@ int printTMAP(options* o, double* x, int numRows, int numCols, int imgNum){
 }
 
 
+double Residual(int numRows, int numCols, options* o, double* tmap, double* K){
+	/*
+		Function to calculate residual convergence (Conservation of energy in this problem)
+
+	*/
+
+	double dx = 1.0/numCols;
+	double dy = 1.0/numRows;
+
+	double TL = o->TempLeft;
+	double TR = o->TempRight;
+
+	double qE, qW, qS, qN;
+	double R = 0;
+	for(int row = 0; row<numRows; row++){
+		for(int col = 0; col<numCols; col++){
+			if(col == 0){
+				qW = dy/(dx/2)*K[row*numCols + col]*(tmap[row*numCols + col] - TL);
+				qE = dy/(dx)*WeightedHarmonicMean(dx/2, dx/2, K[row*numCols + col],K[row*numCols + col+1])*(tmap[row*numCols + col + 1] - tmap[row*numCols + col]);
+			} else if(col == numCols - 1){
+				qW = dy/(dx)*WeightedHarmonicMean(dx/2, dx/2, K[row*numCols + col],K[row*numCols + col-1])*(tmap[row*numCols + col] - tmap[row*numCols + col-1]);
+				qE = dy/(dx/2)*K[row*numCols + col]*(TR - tmap[row*numCols + col]);
+			} else{
+				qW = dy/(dx)*WeightedHarmonicMean(dx/2, dx/2, K[row*numCols + col],K[row*numCols + col-1])*(tmap[row*numCols + col] - tmap[row*numCols + col-1]);
+				qE = dy/(dx)*WeightedHarmonicMean(dx/2, dx/2, K[row*numCols + col],K[row*numCols + col+1])*(tmap[row*numCols + col + 1] - tmap[row*numCols + col]);
+			}
+			if(row == 0){
+				qN = 0;
+				qS = dy/dx*WeightedHarmonicMean(dx/2, dx/2, K[(row+1)*numCols + col], K[(row)*numCols + col])*(tmap[(row+1)*numCols + col] - tmap[row*numCols + col]);
+			} else if(row == numRows - 1){
+				qS = 0;
+				qN = dy/dx*WeightedHarmonicMean(dx/2, dx/2, K[(row-1)*numCols + col], K[(row)*numCols + col])*(tmap[(row)*numCols + col] - tmap[(row-1)*numCols + col]);
+			} else{
+				qS = dy/dx*WeightedHarmonicMean(dx/2, dx/2, K[(row+1)*numCols + col], K[(row)*numCols + col])*(tmap[(row+1)*numCols + col] - tmap[row*numCols + col]);
+				qN = dy/dx*WeightedHarmonicMean(dx/2, dx/2, K[(row-1)*numCols + col], K[(row)*numCols + col])*(tmap[(row)*numCols + col] - tmap[(row-1)*numCols + col]);
+			}
+			R += fabs(qW - qE + qN - qS);
+		}
+	}
+	return R;
+}
+
+
 int printQMAP(options* o, double* x, double* K, int numRows, int numCols, double* xCenter, double* yCenter, double* qR, double* qL, int imgNum){
 
 	/*
