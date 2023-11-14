@@ -46,7 +46,6 @@ typedef struct{
 	float gpuTime;
 	unsigned char *target_data;
 	float keff;
-	bool PathFlag;
 	float conv;
     int numCellsX;
     int numCellsY;
@@ -54,6 +53,31 @@ typedef struct{
     float dx;
     float dy;
 }simulationInfo;
+
+
+__global__ void updateX_V1(float* A, float* x, float* b, float* xNew, int nElements, int numCellsX)
+{
+	unsigned int myRow = blockIdx.x * blockDim.x + threadIdx.x;
+
+	if (myRow < nElements){
+		float sigma = 0;
+		for(int j = 1; j<5; j++){
+			if(A[myRow*5 + j] !=0){
+				if(j == 1){
+					sigma += A[myRow*5 + j]*x[myRow - 1];
+				} else if(j == 2){
+					sigma += A[myRow*5 + j]*x[myRow + 1];
+				} else if(j == 3){
+					sigma += A[myRow*5 + j]*x[myRow + numCellsX];
+				} else if(j == 4){
+					sigma += A[myRow*5 + j]*x[myRow - numCellsX];
+				}
+			}
+		}
+		xNew[myRow] = 1/A[myRow*5 + 0] * (b[myRow] - sigma);
+	}
+		
+}
 
 
 int printOptions(options* opts){
@@ -234,6 +258,68 @@ int readInputFile(char* FileName, options* opts){
 		printf("Please enter a value of 0 or 1 for 'verbose'. Default = 0.\n");
 	}
 	return 0;
+}
+
+int readImage(options opts, simulationInfo* myImg){
+	/*
+		readImage Function:
+		Inputs:
+			- imageAddress: unsigned char reference to the pointer in which the image will be read to.
+			- Width: pointer to variable to store image width
+			- Height: pointer to variable to store image height
+			- NumofChannels: pointer to variable to store number of channels in the image.
+					-> NumofChannels has to be 1, otherwise code is terminated. Please enter grayscale
+						images with NumofChannels = 1.
+		Outputs: None
+
+		Function reads the image into the pointer to the array to store it.
+	*/
+
+	myImg->target_data = stbi_load(opts.inputFilename, &myImg->Width, &myImg->Height, &myImg->nChannels, 1);
+
+	return 0;
+}
+
+
+int outputSingle(options opts, simulationInfo simInfo){
+	FILE *OUTPUT;
+	// imgNum, porosity,Deff,Time,nElements,converge,ks,kf
+
+  OUTPUT = fopen(opts.outputFilename, "a+");
+  fprintf(OUTPUT,"imgNum,porosity,keff,Time,nElements,converge,ks,kf\n");
+  fprintf(OUTPUT, "%s,%f,%2.3f,%f,%d,%f,%f,%f\n", opts.inputFilename, simInfo.porosity, simInfo.keff, simInfo.gpuTime/1000, simInfo.nElements, simInfo.conv,
+  	opts.TCsolid, opts.TCfluid);
+  fclose(OUTPUT);
+  printf("Final Keff = %2.3f\n", simInfo.keff);
+  return 0;
+}
+
+
+float calcPorosity(unsigned char* imageAddress, int Width, int Height){
+	/*
+		calcPorosity
+		Inputs:
+			- imageAddress: pointer to the read image.
+			- Width: original width from std_image
+			- Height: original height from std_image
+
+		Output:
+			- porosity: float containing porosity.
+
+		Function calculates porosity by counting pixels.
+	*/
+
+	float totalCells = (float)Height*Width;
+	float porosity = 0;
+	for(int i = 0; i<Height; i++){
+		for(int j = 0; j<Width; j++){
+			if(imageAddress[i*Width + j] < 150){
+				porosity += 1.0/totalCells;
+			}
+		}
+	}
+
+	return porosity;
 }
 
 
@@ -459,4 +545,276 @@ void unInitializeGPU(float **d_x_vec, float **d_temp_x_vec, float **d_RHS, float
 		getchar();
         return;
     }
+}
+
+
+int JacobiGPU(float *arr, float *sol, float *x_vec, float *temp_x_vec, options opts,
+	float *d_x_vec, float *d_temp_x_vec, float *d_Coeff, float *d_RHS, float *QL, float *QR, float *K, simulationInfo* simInfo)
+{
+
+	int iterCount = 0;
+	float percentChange = 1;
+	int threads_per_block = 160;
+	int numBlocks = simInfo->nElements/threads_per_block + 1;
+	float keffOld = 1;
+	float keffNew = 1;
+	int iterToCheck = 1000;
+	float Q1,Q2;
+	float qAvg = 0;
+	float dx,dy;
+	int numRows = simInfo->numCellsY;
+	int numCols = simInfo->numCellsX;
+	const char *str = (char*) malloc(1024); // To store error string
+
+	dx = simInfo->dx;
+	dy = simInfo->dy;
+
+	int nRows = simInfo->nElements;	// number of rows in the coefficient matrix
+	int nCols = 5;							// number of cols in the coefficient matrix
+
+	// Initialize temp_x_vec
+
+	for(int i = 0; i<nRows; i++){
+		temp_x_vec[i] = x_vec[i];
+	}
+
+	//Copy arrays into GPU memory
+
+	cudaError_t cudaStatus = cudaMemcpy(d_temp_x_vec, temp_x_vec, sizeof(float) * nRows, cudaMemcpyHostToDevice);
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "temp_x_vec cudaMemcpy failed!");
+		str = cudaGetErrorString(cudaStatus);
+		fprintf(stderr, "CUDA Error!:: %s\n", str);
+	}
+	cudaStatus = cudaMemcpy(d_RHS, sol, sizeof(float)*nRows, cudaMemcpyHostToDevice);
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "d_RHS cudaMemcpy failed!");
+		str = cudaGetErrorString(cudaStatus);
+		fprintf(stderr, "CUDA Error!:: %s\n", str);
+	}
+	cudaStatus = cudaMemcpy(d_Coeff, arr, sizeof(float)*nRows*nCols, cudaMemcpyHostToDevice);
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "d_Coeff cudaMemcpy failed!");
+		str = cudaGetErrorString(cudaStatus);
+		fprintf(stderr, "CUDA Error!:: %s\n", str);
+	}
+
+	// Declare event to get time
+	cudaEvent_t start, stop;
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+
+	cudaEventRecord(start, 0);
+
+	while(iterCount < opts.MAX_ITER && opts.ConvergeCriteria < percentChange)
+	{
+		// Call Kernel to Calculate new x-vector
+		
+		updateX_V1<<<numBlocks, threads_per_block>>>(d_Coeff, d_temp_x_vec, d_RHS, d_x_vec, simInfo->nElements, simInfo->numCellsX);
+
+		// update x vector
+
+		d_temp_x_vec = d_x_vec;
+
+		// Convergence related material
+
+		if (iterCount % iterToCheck == 0){
+			cudaStatus = cudaMemcpy(x_vec, d_x_vec, sizeof(float) * nRows, cudaMemcpyDeviceToHost);
+			if (cudaStatus != cudaSuccess) {
+				fprintf(stderr, "x_vec cudaMemcpy failed!");
+				str = cudaGetErrorString(cudaStatus);
+				fprintf(stderr, "CUDA Error!:: %s\n", str);
+			}
+			Q1 = 0;
+			Q2 = 0;
+			for (int j = 0; j<numRows; j++){
+				QL[j] = K[j*numRows]*dy*(x_vec[j*numCols] - opts.TempLeft)/(dx/2);
+				QR[j] = K[(j + 1)*numRows - 1]*dy*(opts.TempRight - x_vec[(j+1)*numCols -1])/(dx/2);
+				// printf("T(0,%d) = %2.3f\n", j, x_vec[j*numCols]);
+				Q1 += QL[j];
+				Q2 += QR[j];
+			}
+			Q1 = Q1;
+			Q2 = Q2;
+			qAvg = (Q1 + Q2)/2;
+			keffNew = qAvg/((opts.TempRight - opts.TempLeft));
+			percentChange = fabs((keffNew - keffOld)/keffOld);
+			keffOld = keffNew;
+
+			printf("Iteration = %d, Keff = %2.3f\n", iterCount, keffNew);
+
+			if (percentChange < 0.001){
+				iterToCheck = 100;
+			} else if(percentChange < 0.0001){
+				iterToCheck = 10;
+			}
+			simInfo->conv = percentChange;
+		}
+
+		// Update iteration count
+		iterCount++;
+	}
+
+	cudaEventRecord(stop, 0);
+	cudaEventSynchronize(stop);
+
+	float elapsedTime;
+	cudaEventElapsedTime(&elapsedTime, start, stop);
+
+	cudaStatus = cudaMemcpy(x_vec, d_x_vec, sizeof(float)*nRows, cudaMemcpyDeviceToHost);
+
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "x_vec cudaMemcpy failed!");
+		str = cudaGetErrorString(cudaStatus);
+		fprintf(stderr, "CUDA Error!:: %s\n", str);
+	}
+
+	simInfo->keff = keffNew;
+
+	simInfo->gpuTime += elapsedTime;
+
+	return iterCount;
+}
+
+
+int SingleSim(options opts){
+	/*
+		Function to read a single image and simulate the effective diffusivity. Results
+		 are stored on the output file
+
+		Inputs:
+			Datastructure with user-defined simulation options
+		Outputs:
+			none
+	*/
+
+	// Define data structures
+
+	simulationInfo simInfo;
+
+	// first step is to read the image properly and calculate the porosity
+
+	readImage(opts, &simInfo);
+
+	simInfo.porosity = calcPorosity(simInfo.target_data, simInfo.Width, simInfo.Height);
+
+	// right now the program only deals with grayscale binary images, so we need to make sure to return that to the user
+
+	if(opts.verbose == 1){
+		std::cout << "Width = " << simInfo.Width << " Height = " << simInfo.Height << " Channel = " << simInfo.nChannels << std::endl;
+		std::cout << "Porosity = " << simInfo.porosity << std::endl;
+	}
+
+	if (simInfo.nChannels != 1){
+		printf("Error: please enter a grascale image with 1 channel.\n Current number of channels = %d\n", simInfo.nChannels);
+		return 1;
+	}
+
+	// Sort out the current mesh
+
+	if(opts.MeshIncreaseX < 1 || opts.MeshIncreaseY < 1){						// Return error if mesh refinement is smaller than 1
+		printf("MeshIncrease has to be an integer greater than 1.\n");
+		return 1;
+	}
+
+	// Define number of cells in each direction
+
+	simInfo.numCellsX = simInfo.Width*opts.MeshIncreaseX;
+	simInfo.numCellsY = simInfo.Height*opts.MeshIncreaseY;
+	simInfo.nElements = simInfo.numCellsX*simInfo.numCellsY;
+	simInfo.dx = 1.0/simInfo.numCellsX;
+	simInfo.dy = 1.0/simInfo.numCellsY;
+
+	// Diffusion coefficients
+
+	float ks = opts.TCsolid;
+	float kf = opts.TCfluid;
+
+	// We will use an artificial scaling of the diffusion coefficient to converge to the correct solution
+
+	// Declare useful arrays
+	float *K = (float*)malloc(sizeof(float)*simInfo.numCellsX*simInfo.numCellsY); 			// Grid matrix containing the diffusion coefficient of each cell with appropriate mesh
+	float *QL = (float*)malloc(sizeof(float)*simInfo.numCellsY);										// mass flux in the left boundary
+	float *QR = (float*)malloc(sizeof(float)*simInfo.numCellsY);										// mass flux in the right boundary
+
+	float *CoeffMatrix = (float *)malloc(sizeof(float)*simInfo.nElements*5);					// array will be used to store our coefficient matrix
+	float *RHS = (float *)malloc(sizeof(float)*simInfo.nElements);										// array used to store RHS of the system of equations
+	float *TemperatureMap = (float *)malloc(sizeof(float)*simInfo.nElements);			// array used to store the solution to the system of equations
+	float *temp_TMap = (float *)malloc(sizeof(float)*simInfo.nElements);			// array used to store the solution to the system of equations
+
+	// Initialize the concentration map with a linear gradient between the two boundaries
+	for(int i = 0; i<simInfo.numCellsY; i++){
+		for(int j = 0; j<simInfo.numCellsX; j++){
+			TemperatureMap[i*simInfo.numCellsX + j] = (float)j/simInfo.numCellsX*(opts.TempRight - opts.TempLeft) + opts.TempLeft;
+		}
+	}
+
+	// Zero the time
+
+	simInfo.gpuTime = 0;
+
+	// Declare GPU arrays
+
+	float *d_x_vec = NULL;
+	float *d_temp_x_vec = NULL;
+	
+	float *d_Coeff = NULL;
+	float *d_RHS = NULL;
+
+	// Initialize the GPU arrays
+
+	if(!initializeGPU(&d_x_vec, &d_temp_x_vec, &d_RHS, &d_Coeff, simInfo))
+	{
+		printf("\n Error when allocating space in GPU");
+		unInitializeGPU(&d_x_vec, &d_temp_x_vec, &d_RHS, &d_Coeff);
+		return 0;
+	}
+
+	// Populate K array
+
+	for(int i = 0; i<simInfo.numCellsY; i++){
+		QL[i] = 0;
+		QR[i] = 0;
+		for(int j = 0; j<simInfo.numCellsX; j++){
+			int targetIndexRow = i/opts.MeshIncreaseY;
+			int targetIndexCol = j/opts.MeshIncreaseX;
+			if(simInfo.target_data[targetIndexRow*simInfo.Width + targetIndexCol] < 150){
+				K[i*simInfo.numCellsX + j] = kf;
+			} else{
+				K[i*simInfo.numCellsX + j] = ks;
+			}
+		}
+	}
+
+	// Initialize arrays for discretization
+
+	memset(RHS, 0, sizeof(RHS));
+	memset(CoeffMatrix, 0, sizeof(CoeffMatrix));
+
+	// Discretize
+
+	DiscretizeMatrix2D(K, CoeffMatrix, RHS, simInfo, opts);
+
+	// Solve
+
+	int iter_taken = 0;
+	iter_taken = JacobiGPU(CoeffMatrix, RHS, TemperatureMap, temp_TMap, opts, 
+		d_x_vec, d_temp_x_vec, d_Coeff, d_RHS, QL, QR, K, &simInfo);
+
+	// create output file 
+	printf("Final Keff = %2.3f\n", simInfo.keff);
+	outputSingle(opts, simInfo);
+
+	// Free everything
+
+	unInitializeGPU(&d_x_vec, &d_temp_x_vec, &d_RHS, &d_Coeff);
+	free(QL);
+	free(QR);
+	free(CoeffMatrix);
+	free(RHS);
+	free(TemperatureMap);
+	free(temp_TMap);
+	free(K);
+
+	return 0;
 }

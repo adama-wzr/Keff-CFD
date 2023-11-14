@@ -3,7 +3,7 @@ ks: 10
 kf: 1
 MeshAmpX: 1
 MeshAmpY: 1
-InputName: 00001.jpg
+InputName: 00000.jpg
 TR: 1
 TL: 0
 OutputName: batchTest.csv
