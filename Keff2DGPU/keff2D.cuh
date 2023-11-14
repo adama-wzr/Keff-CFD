@@ -235,3 +235,228 @@ int readInputFile(char* FileName, options* opts){
 	}
 	return 0;
 }
+
+
+float WeightedHarmonicMean(float w1, float w2, float x1, float x2){
+	/*
+		WeightedHarmonicMean Function:
+		Inputs:
+			-w1: weight of the first number
+			-w2: weight of the second number
+			-x1: first number to be averaged
+			-x2: second number to be averaged
+		Output:
+			- returns H, the weighted harmonic mean between x1 and x2, using weights w1 and w2.
+	*/
+	float H = (w1 + w2)/(w1/x1 + w2/x2);
+	return H;
+}
+
+
+int DiscretizeMatrix2D(float* K, float* A, float* b, simulationInfo simInfo, options opts){
+	/*
+		DiscretizeMatrix2D
+
+		Inputs:
+			- pointer to float array K, where local diffusion coefficients are stored
+			- pointer to empty coefficient matrix
+			- pointer to RHS of the system of equations
+			- datastructure containing simulation information
+			- datastructure with the user-entered options
+		Output:
+			- None
+
+			Function creates the CoeffMatrix and RHS of the system of equations and stores them
+			on the appropriate memory spaces.
+	*/
+
+	int index;
+	float dxw, dxe, dys, dyn;
+	float kw, ke, ks, kn;
+
+	float dx, dy;
+	dx = simInfo.dx;
+	dy = simInfo.dy;
+
+	for(int i = 0; i<simInfo.numCellsY; i++){
+		for(int j = 0; j<simInfo.numCellsX; j++){
+			// initialize everything to zeroes
+			index = (i*simInfo.numCellsX + j); 
+			b[index] = 0;
+			for(int k = 0; k<5; k++){
+				A[index*5 + k] = 0;
+			}
+			// left boundary, only P and E
+			if (j == 0){
+				dxe = dx;
+				ke = WeightedHarmonicMean(dxe/2,dxe/2, K[index], K[index+1]);
+				dxw = dx/2;
+				kw = K[index];
+				A[index*5 + 2] = -ke*dy/dxe;
+				A[index*5 + 0] += (ke*dy/dxe + kw*dy/dxw);
+				b[index] += opts.TempLeft*kw*dy/dxw;
+			} else if(j == simInfo.numCellsX - 1){		// Right boundary, only P and W
+				dxw = dx;
+				kw = WeightedHarmonicMean(dxw/2,dxw/2, K[index], K[index-1]);
+				dxe = dx/2;
+				ke = K[index];
+				A[index*5 + 1] = -kw*dy/dxw;
+				A[index*5 + 0] += (ke*dy/dxe + kw*dy/dxw);
+				b[index] += opts.TempRight*ke*dy/dxe;
+			} else{								// P, W, and E
+				dxw = dx;
+				kw = WeightedHarmonicMean(dxw/2,dxw/2, K[index], K[index-1]);
+				dxe = dx;
+				ke = WeightedHarmonicMean(dxe/2,dxe/2, K[index], K[index+1]);
+				A[index*5 + 1] = -kw*dy/dxw;
+				A[index*5 + 2] = -ke*dy/dxe;
+				A[index*5 + 0] += (ke*dy/dxe + kw*dy/dxw);
+			}
+			// top boundary, only S and P
+			if (i == 0){
+				dyn = dy/2;
+				kn = K[index];
+				dys = dy;
+				ks = WeightedHarmonicMean(dys/2, dys/2, K[index + simInfo.numCellsX], K[index]);
+				A[index*5 + 3] = -ks*dx/dys;
+				A[index*5 + 0] += (ks*dx/dys);
+			}else if(i == simInfo.numCellsY - 1){
+				dyn = dy;
+				kn = WeightedHarmonicMean(dyn/2, dyn/2, K[index], K[index - simInfo.numCellsX]);
+				dys = dy/2;
+				ks = K[index];
+				A[index*5 + 4] = -kn*dx/dyn;
+				A[index*5 + 0] += kn*dx/dyn;
+			} else{
+				dyn = dy;
+				kn = WeightedHarmonicMean(dyn/2, dyn/2, K[index], K[index - simInfo.numCellsX]);
+				dys = dy;
+				ks = WeightedHarmonicMean(dys/2, dys/2, K[index + simInfo.numCellsX], K[index]);
+				A[index*5 + 3] = -ks*dx/dys;
+				A[index*5 + 4] = -kn*dx/dyn;
+				A[index*5 + 0] += (kn*dx/dyn + ks*dx/dys);
+			}
+		}
+	}
+	return 0;
+}
+
+
+int initializeGPU(float **d_x_vec, float **d_temp_x_vec, float **d_RHS, float **d_Coeff, simulationInfo simInfo){
+
+	// Set device, when cudaStatus is called give status of assigned device.
+	// This is important to know if we are running out of GPU space
+	cudaError_t cudaStatus = cudaSetDevice(0);
+
+	// Start by allocating space in GPU memory
+
+	if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?");
+		getchar();
+        return 0;
+    }
+
+    cudaStatus = cudaMalloc((void**)&(*d_x_vec), simInfo.nElements*sizeof(float));
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed!");
+		getchar();
+        return 0;
+    }
+
+    cudaStatus = cudaMalloc((void**)&(*d_temp_x_vec), simInfo.nElements*sizeof(float));
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed!");
+		getchar();
+        return 0;
+    }
+
+    cudaStatus = cudaMalloc((void**)&(*d_RHS), simInfo.nElements*sizeof(float));
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed!");
+		getchar();
+        return 0;
+    }
+
+    cudaStatus = cudaMalloc((void**)&(*d_Coeff), simInfo.nElements*sizeof(float)*5);
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed!");
+		getchar();
+        return 0;
+    }
+
+    // Set GPU buffers (initializing matrices to 0)
+
+     // Memset GPU buffers
+    cudaStatus = cudaMemset((*d_x_vec),0, simInfo.nElements*sizeof(float));
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaMemset failed!");
+		getchar();
+        return 0;
+    }
+
+	// Memset GPU buffers
+    cudaStatus = cudaMemset((*d_temp_x_vec),0, simInfo.nElements*sizeof(float));
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaMemset failed!");
+		getchar();
+        return 0;
+    }
+
+     // Memset GPU buffers
+    cudaStatus = cudaMemset((*d_RHS),0, simInfo.nElements*sizeof(float));
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaMemset failed!");
+		getchar();
+        return 0;
+    }
+
+	// Memset GPU buffers
+    cudaStatus = cudaMemset((*d_Coeff),0, 5*simInfo.nElements*sizeof(float));		// coefficient matrix has the 5 main diagonals for all elements
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaMemset failed!");
+		getchar();
+        return 0;
+    }
+
+    return 1;
+}
+
+void unInitializeGPU(float **d_x_vec, float **d_temp_x_vec, float **d_RHS, float **d_Coeff)
+{
+	cudaError_t cudaStatus;
+
+	if((*d_x_vec)!=NULL)
+    cudaStatus = cudaFree((*d_x_vec));
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaFree failed!");
+        return;
+    }
+
+	if((*d_temp_x_vec)!=NULL)
+    cudaStatus = cudaFree((*d_temp_x_vec));
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaFree failed!");
+        return;
+    }
+
+	if((*d_Coeff)!=NULL)
+    cudaStatus = cudaFree((*d_Coeff));
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaFree failed!");
+        return;
+    }
+
+	if((*d_RHS)!=NULL)
+    cudaStatus = cudaFree((*d_RHS));
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaFree failed!");
+        return;
+    }    
+
+	cudaStatus = cudaDeviceReset();
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaDeviceReset failed!");
+		getchar();
+        return;
+    }
+}
