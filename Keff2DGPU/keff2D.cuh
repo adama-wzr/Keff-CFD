@@ -324,6 +324,50 @@ float WeightedHarmonicMean(float w1, float w2, float x1, float x2){
 	return H;
 }
 
+
+float Residual(int numRows, int numCols, options* o, float* tmap, float* K){
+	/*
+		Function to calculate residual convergence (Conservation of energy in this problem)
+
+	*/
+
+	float dx = 1.0/numCols;
+	float dy = 1.0/numRows;
+
+	float TL = o->TempLeft;
+	float TR = o->TempRight;
+
+	float qE, qW, qS, qN;
+	float R = 0;
+	for(int row = 0; row<numRows; row++){
+		for(int col = 0; col<numCols; col++){
+			if(col == 0){
+				qW = dy/(dx/2)*K[row*numCols + col]*(tmap[row*numCols + col] - TL);
+				qE = dy/(dx)*WeightedHarmonicMean(dx/2, dx/2, K[row*numCols + col],K[row*numCols + col+1])*(tmap[row*numCols + col + 1] - tmap[row*numCols + col]);
+			} else if(col == numCols - 1){
+				qW = dy/(dx)*WeightedHarmonicMean(dx/2, dx/2, K[row*numCols + col],K[row*numCols + col-1])*(tmap[row*numCols + col] - tmap[row*numCols + col-1]);
+				qE = dy/(dx/2)*K[row*numCols + col]*(TR - tmap[row*numCols + col]);
+			} else{
+				qW = dy/(dx)*WeightedHarmonicMean(dx/2, dx/2, K[row*numCols + col],K[row*numCols + col-1])*(tmap[row*numCols + col] - tmap[row*numCols + col-1]);
+				qE = dy/(dx)*WeightedHarmonicMean(dx/2, dx/2, K[row*numCols + col],K[row*numCols + col+1])*(tmap[row*numCols + col + 1] - tmap[row*numCols + col]);
+			}
+			if(row == 0){
+				qN = 0;
+				qS = dy/dx*WeightedHarmonicMean(dx/2, dx/2, K[(row+1)*numCols + col], K[(row)*numCols + col])*(tmap[(row+1)*numCols + col] - tmap[row*numCols + col]);
+			} else if(row == numRows - 1){
+				qS = 0;
+				qN = dy/dx*WeightedHarmonicMean(dx/2, dx/2, K[(row-1)*numCols + col], K[(row)*numCols + col])*(tmap[(row)*numCols + col] - tmap[(row-1)*numCols + col]);
+			} else{
+				qS = dy/dx*WeightedHarmonicMean(dx/2, dx/2, K[(row+1)*numCols + col], K[(row)*numCols + col])*(tmap[(row+1)*numCols + col] - tmap[row*numCols + col]);
+				qN = dy/dx*WeightedHarmonicMean(dx/2, dx/2, K[(row-1)*numCols + col], K[(row)*numCols + col])*(tmap[(row)*numCols + col] - tmap[(row-1)*numCols + col]);
+			}
+			R += fabs(qW - qE + qN - qS);
+		}
+	}
+	return R;
+}
+
+
 int outputSingle(options opts, simulationInfo simInfo){
 	/*
 		outputSingle:
@@ -913,6 +957,9 @@ int SingleSim(options opts){
 	if(opts.printQmap == 1){
 		printQMAP(&opts, TemperatureMap, K, simInfo.numCellsY, simInfo.numCellsX, simInfo.dx, simInfo.dy, QR, QL, 0);
 	}
+
+	float R = Residual(simInfo.numCellsY, simInfo.numCellsX, &opts, TemperatureMap, K);
+	printf("Residual = %f\n", R);
 	// Free everything
 
 	unInitializeGPU(&d_x_vec, &d_temp_x_vec, &d_RHS, &d_Coeff);
