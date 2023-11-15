@@ -294,6 +294,40 @@ int outputSingle(options opts, simulationInfo simInfo){
   return 0;
 }
 
+int printTMAP(options* o, float* x, int numRows, int numCols, int imgNum){
+	/*
+		printTMAP:
+		Inputs:
+			- o -> options datastructure
+			- x -> pointer to temperature distribution map.
+			- numRows -> number of rows
+			- numCols -> number of columns
+			- imgNum: this option is only useful when running a batch, this is the image number.
+		Outputs:
+			- none
+		Function creates and saves a temperature map onto a .csv file
+	*/
+
+	FILE *T_OUT;
+	char filename[100];
+	if(o->BatchFlag == 0){
+		strcpy(filename, o->TMapName);
+	} else{
+		sprintf(filename, "TMAP_%05d.csv\n", imgNum);
+	}
+  	T_OUT = fopen(filename, "w+");
+  	fprintf(T_OUT,"x,y,T\n");
+
+	for(int i = 0; i<numRows; i++){
+		for(int j = 0; j<numCols; j++){
+			fprintf(T_OUT,"%d,%d,%f\n",j,i,x[i*numCols + j]);
+		}
+	}
+
+	fclose(T_OUT);
+	return 0;
+}
+
 
 float calcPorosity(unsigned char* imageAddress, int Width, int Height){
 	/*
@@ -805,6 +839,11 @@ int SingleSim(options opts){
 	printf("Final Keff = %2.3f\n", simInfo.keff);
 	outputSingle(opts, simInfo);
 
+	// create tmap
+
+	if(opts.printTmap == 1){
+		printTMAP(&opts, TemperatureMap, simInfo.numCellsY, simInfo.numCellsY, 0);
+	}
 	// Free everything
 
 	unInitializeGPU(&d_x_vec, &d_temp_x_vec, &d_RHS, &d_Coeff);
