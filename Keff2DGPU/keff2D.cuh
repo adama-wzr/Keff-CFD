@@ -15,14 +15,14 @@
 
 
 typedef struct{
-  double TCsolid;
-  double TCfluid;
+  float TCsolid;
+  float TCfluid;
   int MeshIncreaseX;
   int MeshIncreaseY;
-  double TempLeft;
-  double TempRight;
+  float TempLeft;
+  float TempRight;
   long int MAX_ITER;
-  double ConvergeCriteria;
+  float ConvergeCriteria;
   char* inputFilename;
   char* outputFilename;
   int printTmap;
@@ -169,7 +169,7 @@ int readInputFile(char* FileName, options* opts){
 	std::string myText;
 
 	char tempC[1000];
-	double tempD;
+	float tempD;
 	char tempFilenames[1000];
 	std::ifstream InputFile(FileName);
 
@@ -181,7 +181,7 @@ int readInputFile(char* FileName, options* opts){
 	opts->QMapName=(char*)malloc(1000*sizeof(char));
 	while(std::getline(InputFile, myText)){
 
-	 	sscanf(myText.c_str(), "%s %lf", tempC, &tempD);
+	 	sscanf(myText.c_str(), "%s %f", tempC, &tempD);
 	 	if (strcmp(tempC, "ks:") == 0){
 	 		opts->TCsolid = tempD;
 	 	}else if(strcmp(tempC, "kf:") == 0){
@@ -281,54 +281,6 @@ int readImage(options opts, simulationInfo* myImg){
 }
 
 
-int outputSingle(options opts, simulationInfo simInfo){
-	FILE *OUTPUT;
-	// imgNum, porosity,Deff,Time,nElements,converge,ks,kf
-
-  OUTPUT = fopen(opts.outputFilename, "a+");
-  fprintf(OUTPUT,"imgNum,porosity,keff,Time,nElements,converge,ks,kf\n");
-  fprintf(OUTPUT, "%s,%f,%2.3f,%f,%d,%f,%f,%f\n", opts.inputFilename, simInfo.porosity, simInfo.keff, simInfo.gpuTime/1000, simInfo.nElements, simInfo.conv,
-  	opts.TCsolid, opts.TCfluid);
-  fclose(OUTPUT);
-  printf("Final Keff = %2.3f\n", simInfo.keff);
-  return 0;
-}
-
-int printTMAP(options* o, float* x, int numRows, int numCols, int imgNum){
-	/*
-		printTMAP:
-		Inputs:
-			- o -> options datastructure
-			- x -> pointer to temperature distribution map.
-			- numRows -> number of rows
-			- numCols -> number of columns
-			- imgNum: this option is only useful when running a batch, this is the image number.
-		Outputs:
-			- none
-		Function creates and saves a temperature map onto a .csv file
-	*/
-
-	FILE *T_OUT;
-	char filename[100];
-	if(o->BatchFlag == 0){
-		strcpy(filename, o->TMapName);
-	} else{
-		sprintf(filename, "TMAP_%05d.csv\n", imgNum);
-	}
-  	T_OUT = fopen(filename, "w+");
-  	fprintf(T_OUT,"x,y,T\n");
-
-	for(int i = 0; i<numRows; i++){
-		for(int j = 0; j<numCols; j++){
-			fprintf(T_OUT,"%d,%d,%f\n",j,i,x[i*numCols + j]);
-		}
-	}
-
-	fclose(T_OUT);
-	return 0;
-}
-
-
 float calcPorosity(unsigned char* imageAddress, int Width, int Height){
 	/*
 		calcPorosity
@@ -370,6 +322,119 @@ float WeightedHarmonicMean(float w1, float w2, float x1, float x2){
 	*/
 	float H = (w1 + w2)/(w1/x1 + w2/x2);
 	return H;
+}
+
+int outputSingle(options opts, simulationInfo simInfo){
+	/*
+		outputSingle:
+		Inputs:
+			- struct opts: data structure containing user entered options
+			- struct simInfo: data structure containing simulation domain information
+				and results information
+		Outputs:
+			- none
+		
+		Function will create a file or append an existing file save information related to a single simulation.
+	*/
+	FILE *OUTPUT;
+
+	// imgNum, porosity,keff,Time,nElements,converge,ks,kf
+
+	OUTPUT = fopen(opts.outputFilename, "a+");
+	fprintf(OUTPUT,"imgNum,porosity,keff,Time,nElements,converge,ks,kf\n");
+	fprintf(OUTPUT, "%s,%f,%2.3f,%f,%d,%f,%f,%f\n", opts.inputFilename, simInfo.porosity, simInfo.keff, simInfo.gpuTime/1000, simInfo.nElements, simInfo.conv,
+		opts.TCsolid, opts.TCfluid);
+	fclose(OUTPUT);
+	printf("Final Keff = %2.3f\n", simInfo.keff);
+	return 0;
+}
+
+
+int printTMAP(options* o, float* x, int numRows, int numCols, int imgNum){
+	/*
+		printTMAP:
+		Inputs:
+			- o -> options datastructure
+			- x -> pointer to temperature distribution map.
+			- numRows -> number of rows
+			- numCols -> number of columns
+			- imgNum: this option is only useful when running a batch, this is the image number.
+		Outputs:
+			- none
+		Function creates and saves a temperature map onto a .csv file
+	*/
+
+	FILE *T_OUT;
+	char filename[100];
+	if(o->BatchFlag == 0){
+		strcpy(filename, o->TMapName);
+	} else{
+		sprintf(filename, "TMAP_%05d.csv\n", imgNum);
+	}
+  	T_OUT = fopen(filename, "w+");
+  	fprintf(T_OUT,"x,y,T\n");
+
+	for(int i = 0; i<numRows; i++){
+		for(int j = 0; j<numCols; j++){
+			fprintf(T_OUT,"%d,%d,%f\n",j,i,x[i*numCols + j]);
+		}
+	}
+
+	fclose(T_OUT);
+	return 0;
+}
+
+
+int printQMAP(options* o, float* x, float* K, int numRows, int numCols, float dx, float dy, float* qR, float* qL, int imgNum){
+
+	/*
+		printQMAP:
+		Inputs:
+			- o -> options datastructure
+			- x -> pointer to temperature distribution map.
+			- numRows -> number of rows
+			- numCols -> number of columns
+			- float dx -> size of one grid element (for steady regular grids)
+			- float dy -> size of one grid element (for steady regular grids)
+			- qL = pointer to array heat transfer across the left boundary
+			- qR = pointer to array with heat transfer across the right boundary
+			- imgNum: this option is only useful when running a batch, this is the image number.
+		Outputs:
+			- none
+		Function creates and saves a heat flux map onto a .csv file.
+	*/
+
+
+	FILE *Q_OUT;
+
+	char filename[100];
+	if(o->BatchFlag == 0){
+		strcpy(filename, o->QMapName);
+	} else{
+		sprintf(filename, "QMAP_%05d.csv\n",imgNum);
+	}
+	Q_OUT = fopen(filename, "w+");
+	fprintf(Q_OUT,"x,y,Q\n");
+
+	float localQ;
+	float localK;
+
+	for(int i = 0; i<numRows; i++){
+		for(int j = 0; j<numCols + 1; j++){
+			if(j == 0){
+				fprintf(Q_OUT,"%d,%d,%f\n",j,i, qL[i]);
+			} else if(j == numCols){
+				fprintf(Q_OUT, "%d,%d,%f\n",j,i, qR[i]);
+			} else{
+				localK = WeightedHarmonicMean(dx/2, dx/2, K[i*numCols + j], K[i*numCols + j - 1]);
+				localQ = dy/dx*localK*(x[i*numCols + j] - x[i*numCols + j - 1]);
+				fprintf(Q_OUT, "%d,%d,%f\n",j,i, localQ);
+			}
+		}
+	}
+
+	fclose(Q_OUT);
+	return 0;
 }
 
 
@@ -843,6 +908,10 @@ int SingleSim(options opts){
 
 	if(opts.printTmap == 1){
 		printTMAP(&opts, TemperatureMap, simInfo.numCellsY, simInfo.numCellsY, 0);
+	}
+
+	if(opts.printQmap == 1){
+		printQMAP(&opts, TemperatureMap, K, simInfo.numCellsY, simInfo.numCellsX, simInfo.dx, simInfo.dy, QR, QL, 0);
 	}
 	// Free everything
 
