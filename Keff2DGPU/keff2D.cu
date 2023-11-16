@@ -14,7 +14,12 @@ int main(void){
 
 	readInputFile(inputFilename, &opts);
 
-	SingleSim(opts);
+	if(opts.BatchFlag == 0){
+		SingleSim(opts);
+	}else{
+		BatchSim(opts);
+	}
+	
 
 	// if(opts.BatchFlag == 0){
 	// 	SingleSim(opts);

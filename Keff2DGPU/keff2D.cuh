@@ -274,8 +274,13 @@ int readImage(options opts, simulationInfo* myImg){
 
 		Function reads the image into the pointer to the array to store it.
 	*/
-
-	myImg->target_data = stbi_load(opts.inputFilename, &myImg->Width, &myImg->Height, &myImg->nChannels, 1);
+	if(opts.BatchFlag == 0){
+		myImg->target_data = stbi_load(opts.inputFilename, &myImg->Width, &myImg->Height, &myImg->nChannels, 1);
+	}else if(opts.BatchFlag == 1){
+		
+		myImg->target_data = stbi_load(opts.inputFilename, &myImg->Width, &myImg->Height, &myImg->nChannels, 1);
+	}
+	
 
 	return 0;
 }
@@ -397,6 +402,31 @@ int outputSingle(options opts, simulationInfo simInfo){
 }
 
 
+void outputBatch(options opts, simulationInfo* simInfo){
+	/*
+		outputBatch:
+		Inputs:
+			- struct opts: data structure containing user entered options
+			- pointer to struct simInfo: data structure containing simulation domain information
+				and results information for all images (array of structs)
+		Outputs:
+			- none
+		
+		Function will create a file or append an existing file save information related to all simulations.
+	*/
+	FILE *OUTPUT;
+
+	// imgNum, porosity,keff,Time,nElements,converge,ks,kf
+
+	OUTPUT = fopen(opts.outputFilename, "a+");
+	fprintf(OUTPUT,"imgNum,porosity,keff,Time,nElements,converge,ks,kf\n");
+	for(int i = 0; i<opts.NumImg; i++){
+		fprintf(OUTPUT, "%05d,%f,%2.3f,%f,%d,%f,%f,%f\n", i, simInfo[i].porosity, simInfo[i].keff, simInfo[i].gpuTime/1000, simInfo[i].nElements, simInfo[i].conv,
+			opts.TCsolid, opts.TCfluid);
+	}
+}
+
+
 int printTMAP(options* o, float* x, int numRows, int numCols, int imgNum){
 	/*
 		printTMAP:
@@ -416,11 +446,10 @@ int printTMAP(options* o, float* x, int numRows, int numCols, int imgNum){
 	if(o->BatchFlag == 0){
 		strcpy(filename, o->TMapName);
 	} else{
-		sprintf(filename, "TMAP_%05d.csv\n", imgNum);
+		sprintf(filename, "TMAP_%05d.csv", imgNum);
 	}
   	T_OUT = fopen(filename, "w+");
   	fprintf(T_OUT,"x,y,T\n");
-
 	for(int i = 0; i<numRows; i++){
 		for(int j = 0; j<numCols; j++){
 			fprintf(T_OUT,"%d,%d,%f\n",j,i,x[i*numCols + j]);
@@ -458,7 +487,7 @@ int printQMAP(options* o, float* x, float* K, int numRows, int numCols, float dx
 	if(o->BatchFlag == 0){
 		strcpy(filename, o->QMapName);
 	} else{
-		sprintf(filename, "QMAP_%05d.csv\n",imgNum);
+		sprintf(filename, "QMAP_%05d.csv",imgNum);
 	}
 	Q_OUT = fopen(filename, "w+");
 	fprintf(Q_OUT,"x,y,Q\n");
@@ -876,8 +905,6 @@ int SingleSim(options opts){
 	float ks = opts.TCsolid;
 	float kf = opts.TCfluid;
 
-	// We will use an artificial scaling of the diffusion coefficient to converge to the correct solution
-
 	// Declare useful arrays
 	float *K = (float*)malloc(sizeof(float)*simInfo.numCellsX*simInfo.numCellsY); 			// Grid matrix containing the diffusion coefficient of each cell with appropriate mesh
 	float *QL = (float*)malloc(sizeof(float)*simInfo.numCellsY);										// mass flux in the left boundary
@@ -888,7 +915,7 @@ int SingleSim(options opts){
 	float *TemperatureMap = (float *)malloc(sizeof(float)*simInfo.nElements);			// array used to store the solution to the system of equations
 	float *temp_TMap = (float *)malloc(sizeof(float)*simInfo.nElements);			// array used to store the solution to the system of equations
 
-	// Initialize the concentration map with a linear gradient between the two boundaries
+	// Initialize the temperature map with a linear gradient between the two boundaries
 	for(int i = 0; i<simInfo.numCellsY; i++){
 		for(int j = 0; j<simInfo.numCellsX; j++){
 			TemperatureMap[i*simInfo.numCellsX + j] = (float)j/simInfo.numCellsX*(opts.TempRight - opts.TempLeft) + opts.TempLeft;
@@ -963,8 +990,6 @@ int SingleSim(options opts){
 		printQMAP(&opts, TemperatureMap, K, simInfo.numCellsY, simInfo.numCellsX, simInfo.dx, simInfo.dy, QR, QL, 0);
 	}
 
-	float R = Residual(simInfo.numCellsY, simInfo.numCellsX, &opts, TemperatureMap, K);
-	printf("Residual = %f\n", R);
 	// Free everything
 
 	unInitializeGPU(&d_x_vec, &d_temp_x_vec, &d_RHS, &d_Coeff);
@@ -975,6 +1000,165 @@ int SingleSim(options opts){
 	free(TemperatureMap);
 	free(temp_TMap);
 	free(K);
+
+	return 0;
+}
+
+int BatchSim(options opts){
+	/*
+		Function BatchSim:
+
+		Inputs:
+			Datastructure with user-defined simulation options
+		Outputs:
+			none
+
+		Function will run a simulation for effective thermal conductivity on a batch of images,
+			while respecting the user entered options passed to the function.
+	*/
+
+	simulationInfo* simInfo = (simulationInfo *)malloc(opts.NumImg*sizeof(simulationInfo));
+
+	for(int myNum = 0; myNum<opts.NumImg; myNum++){
+		// first step is to read the image properly and calculate the porosity
+
+		sprintf(opts.inputFilename, "%05d.jpg", myNum);
+
+		readImage(opts, &simInfo[myNum]);
+
+		simInfo[myNum].porosity = calcPorosity(simInfo[myNum].target_data, simInfo[myNum].Width, simInfo[myNum].Height);
+
+		// right now the program only deals with grayscale binary images, so we need to make sure to return that to the user
+
+		if(opts.verbose == 1){
+			std::cout << "Width = " << simInfo[myNum].Width << " Height = " << simInfo[myNum].Height << " Channel = " << simInfo[myNum].nChannels << std::endl;
+			std::cout << "Porosity = " << simInfo[myNum].porosity << std::endl;
+		}
+
+		if (simInfo[myNum].nChannels != 1){
+			printf("Error: please enter a grascale image with 1 channel.\n Current number of channels = %d\n", simInfo[myNum].nChannels);
+			return 1;
+		}
+
+		// Sort out the current mesh
+
+		if(opts.MeshIncreaseX < 1 || opts.MeshIncreaseY < 1){						// Return error if mesh refinement is smaller than 1
+			printf("MeshIncrease has to be an integer greater than 1.\n");
+			return 1;
+		}
+
+		// Define number of cells in each direction
+
+		simInfo[myNum].numCellsX = simInfo[myNum].Width*opts.MeshIncreaseX;
+		simInfo[myNum].numCellsY = simInfo[myNum].Height*opts.MeshIncreaseY;
+		simInfo[myNum].nElements = simInfo[myNum].numCellsX*simInfo[myNum].numCellsY;
+		simInfo[myNum].dx = 1.0/simInfo[myNum].numCellsX;
+		simInfo[myNum].dy = 1.0/simInfo[myNum].numCellsY;
+
+		// Diffusion coefficients
+
+		float ks = opts.TCsolid;
+		float kf = opts.TCfluid;
+
+		// We will use an artificial scaling of the diffusion coefficient to converge to the correct solution
+
+		// Declare useful arrays
+		float *K = (float*)malloc(sizeof(float)*simInfo[myNum].numCellsX*simInfo[myNum].numCellsY); 			// Grid matrix containing the diffusion coefficient of each cell with appropriate mesh
+		float *QL = (float*)malloc(sizeof(float)*simInfo[myNum].numCellsY);										// mass flux in the left boundary
+		float *QR = (float*)malloc(sizeof(float)*simInfo[myNum].numCellsY);										// mass flux in the right boundary
+
+		float *CoeffMatrix = (float *)malloc(sizeof(float)*simInfo[myNum].nElements*5);					// array will be used to store our coefficient matrix
+		float *RHS = (float *)malloc(sizeof(float)*simInfo[myNum].nElements);										// array used to store RHS of the system of equations
+		float *TemperatureMap = (float *)malloc(sizeof(float)*simInfo[myNum].nElements);			// array used to store the solution to the system of equations
+		float *temp_TMap = (float *)malloc(sizeof(float)*simInfo[myNum].nElements);			// array used to store the solution to the system of equations
+
+		// Initialize the concentration map with a linear gradient between the two boundaries
+		for(int i = 0; i<simInfo[myNum].numCellsY; i++){
+			for(int j = 0; j<simInfo[myNum].numCellsX; j++){
+				TemperatureMap[i*simInfo[myNum].numCellsX + j] = (float)j/simInfo[myNum].numCellsX*(opts.TempRight - opts.TempLeft) + opts.TempLeft;
+			}
+		}
+
+		// Zero the time
+
+		simInfo[myNum].gpuTime = 0;
+
+		// Declare GPU arrays
+
+		float *d_x_vec = NULL;
+		float *d_temp_x_vec = NULL;
+		
+		float *d_Coeff = NULL;
+		float *d_RHS = NULL;
+
+		// Initialize the GPU arrays
+
+		if(!initializeGPU(&d_x_vec, &d_temp_x_vec, &d_RHS, &d_Coeff, simInfo[myNum]))
+		{
+			printf("\n Error when allocating space in GPU");
+			unInitializeGPU(&d_x_vec, &d_temp_x_vec, &d_RHS, &d_Coeff);
+			return 0;
+		}
+
+		// Populate K array
+
+		for(int i = 0; i<simInfo[myNum].numCellsY; i++){
+			QL[i] = 0;
+			QR[i] = 0;
+			for(int j = 0; j<simInfo[myNum].numCellsX; j++){
+				int targetIndexRow = i/opts.MeshIncreaseY;
+				int targetIndexCol = j/opts.MeshIncreaseX;
+				if(simInfo[myNum].target_data[targetIndexRow*simInfo[myNum].Width + targetIndexCol] < 150){
+					K[i*simInfo[myNum].numCellsX + j] = kf;
+				} else{
+					K[i*simInfo[myNum].numCellsX + j] = ks;
+				}
+			}
+		}
+
+		// Initialize arrays for discretization
+
+		memset(RHS, 0, sizeof(RHS));
+		memset(CoeffMatrix, 0, sizeof(CoeffMatrix));
+
+		// Discretize
+
+		DiscretizeMatrix2D(K, CoeffMatrix, RHS, simInfo[myNum], opts);
+
+		// Solve
+
+		int iter_taken = 0;
+		iter_taken = JacobiGPU(CoeffMatrix, RHS, TemperatureMap, temp_TMap, opts, 
+			d_x_vec, d_temp_x_vec, d_Coeff, d_RHS, QL, QR, K, &simInfo[myNum]);
+
+		// Print
+		if(opts.verbose == 1){
+			printf("Final Keff = %2.3f, Iter Total = %d\n", simInfo[myNum].keff, iter_taken);
+		}
+
+		// create tmap
+
+		if(opts.printTmap == 1){
+			printTMAP(&opts, TemperatureMap, simInfo[myNum].numCellsY, simInfo[myNum].numCellsY, myNum);
+		}
+
+		// Create qmap
+
+		if(opts.printQmap == 1){
+			printQMAP(&opts, TemperatureMap, K, simInfo[myNum].numCellsY, simInfo[myNum].numCellsX, simInfo[myNum].dx, simInfo[myNum].dy, QR, QL, myNum);
+		}
+
+		unInitializeGPU(&d_x_vec, &d_temp_x_vec, &d_RHS, &d_Coeff);
+		free(QL);
+		free(QR);
+		free(CoeffMatrix);
+		free(RHS);
+		free(TemperatureMap);
+		free(temp_TMap);
+		free(K);
+	}
+
+	free(simInfo);
 
 	return 0;
 }
