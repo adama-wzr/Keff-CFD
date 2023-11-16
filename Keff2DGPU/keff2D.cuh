@@ -364,6 +364,9 @@ float Residual(int numRows, int numCols, options* o, float* tmap, float* K){
 			R += fabs(qW - qE + qN - qS);
 		}
 	}
+
+	R = R/(numCols*numRows);
+
 	return R;
 }
 
@@ -696,12 +699,11 @@ int JacobiGPU(float *arr, float *sol, float *x_vec, float *temp_x_vec, options o
 {
 
 	int iterCount = 0;
-	float percentChange = 1;
+	float Res = 1;
 	int threads_per_block = 160;
 	int numBlocks = simInfo->nElements/threads_per_block + 1;
-	float keffOld = 1;
 	float keffNew = 1;
-	int iterToCheck = 1000;
+	int iterToCheck = 10000;
 	float Q1,Q2;
 	float qAvg = 0;
 	float dx,dy;
@@ -749,7 +751,7 @@ int JacobiGPU(float *arr, float *sol, float *x_vec, float *temp_x_vec, options o
 
 	cudaEventRecord(start, 0);
 
-	while(iterCount < opts.MAX_ITER && opts.ConvergeCriteria < percentChange)
+	while(iterCount < opts.MAX_ITER && opts.ConvergeCriteria < Res)
 	{
 		// Call Kernel to Calculate new x-vector
 		
@@ -781,17 +783,15 @@ int JacobiGPU(float *arr, float *sol, float *x_vec, float *temp_x_vec, options o
 			Q2 = Q2;
 			qAvg = (Q1 + Q2)/2;
 			keffNew = qAvg/((opts.TempRight - opts.TempLeft));
-			percentChange = fabs((keffNew - keffOld)/keffOld);
-			keffOld = keffNew;
+			Res = Residual(numRows, numCols, &opts, x_vec, K);
+			if(opts.verbose == 1 && opts.BatchFlag == 0){
+				printf("Iteration = %d, Keff = %2.3f, Residual = %1.7f\n", iterCount, keffNew, Res);
+			}			
 
-			printf("Iteration = %d, Keff = %2.3f\n", iterCount, keffNew);
-
-			if (percentChange < 0.001){
-				iterToCheck = 100;
-			} else if(percentChange < 0.0001){
-				iterToCheck = 10;
+			if (Res < 0.001){
+				iterToCheck = 1000;
 			}
-			simInfo->conv = percentChange;
+			simInfo->conv = Res;
 		}
 
 		// Update iteration count
@@ -829,6 +829,9 @@ int SingleSim(options opts){
 			Datastructure with user-defined simulation options
 		Outputs:
 			none
+
+		Function will run a simulation for effective thermal conductivity on a single image,
+			while respecting the user entered options passed to the function.
 	*/
 
 	// Define data structures
@@ -944,8 +947,10 @@ int SingleSim(options opts){
 	iter_taken = JacobiGPU(CoeffMatrix, RHS, TemperatureMap, temp_TMap, opts, 
 		d_x_vec, d_temp_x_vec, d_Coeff, d_RHS, QL, QR, K, &simInfo);
 
-	// create output file 
-	printf("Final Keff = %2.3f\n", simInfo.keff);
+	// create output file
+	if(opts.verbose == 1){
+		printf("Final Keff = %2.3f, Iter Total = %d\n", simInfo.keff, iter_taken);
+	}
 	outputSingle(opts, simInfo);
 
 	// create tmap

@@ -1,8 +1,8 @@
 Input File:
 ks: 10
 kf: 1
-MeshAmpX: 1
-MeshAmpY: 1
+MeshAmpX: 2
+MeshAmpY: 2
 InputName: 00000.jpg
 TR: 1
 TL: 0
