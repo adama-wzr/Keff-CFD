@@ -14,23 +14,20 @@ int main(void){
 
 	readInputFile(inputFilename, &opts);
 
+	int numDevices = 0;
+
+	cudaGetDeviceCount(&numDevices);
+	if(opts.verbose == 1){
+		printf("Cuda Capable Devices = %d\n", numDevices);
+	}
+
 	if(opts.BatchFlag == 0){
 		SingleSim(opts);
-	}else{
+	}else if(opts.BatchFlag == 1){
 		BatchSim(opts);
+	} else{
+		std::cout << "Error: no valid BatchFlag option, check input file." << std::endl;
 	}
-	
-
-	// if(opts.BatchFlag == 0){
-	// 	SingleSim(opts);
-	// } else if(opts.BatchFlag == 1){
-	// 	BatchSim(opts);
-	// } else if(opts.MeshFlag == 1){
-    //     MeshStudy(opts);
-    // } 
-    // else{
-	// 	std::cout << "Error: no valid BatchFlag option, check input file." << std::endl;
-	// }
 
 	return 0;
 
