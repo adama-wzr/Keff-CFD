@@ -394,7 +394,7 @@ int outputSingle(options opts, simulationInfo simInfo){
 
 	OUTPUT = fopen(opts.outputFilename, "a+");
 	fprintf(OUTPUT,"imgNum,porosity,keff,Time,nElements,converge,ks,kf\n");
-	fprintf(OUTPUT, "%s,%f,%2.3f,%f,%d,%f,%f,%f\n", opts.inputFilename, simInfo.porosity, simInfo.keff, simInfo.gpuTime/1000, simInfo.nElements, simInfo.conv,
+	fprintf(OUTPUT, "%s,%f,%2.3f,%f,%d,%1.9f,%f,%f\n", opts.inputFilename, simInfo.porosity, simInfo.keff, simInfo.gpuTime/1000, simInfo.nElements, simInfo.conv,
 		opts.TCsolid, opts.TCfluid);
 	fclose(OUTPUT);
 	printf("Final Keff = %2.3f\n", simInfo.keff);
@@ -421,7 +421,7 @@ void outputBatch(options opts, simulationInfo* simInfo){
 	OUTPUT = fopen(opts.outputFilename, "a+");
 	fprintf(OUTPUT,"imgNum,porosity,keff,Time,nElements,converge,ks,kf\n");
 	for(int i = 0; i<opts.NumImg; i++){
-		fprintf(OUTPUT, "%05d,%f,%2.3f,%f,%d,%f,%f,%f\n", i, simInfo[i].porosity, simInfo[i].keff, simInfo[i].gpuTime/1000, simInfo[i].nElements, simInfo[i].conv,
+		fprintf(OUTPUT, "%05d,%f,%2.3f,%f,%d,%1.9f,%f,%f\n", i, simInfo[i].porosity, simInfo[i].keff, simInfo[i].gpuTime/1000, simInfo[i].nElements, simInfo[i].conv,
 			opts.TCsolid, opts.TCfluid);
 	}
 }
