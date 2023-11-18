@@ -1024,6 +1024,8 @@ int BatchSim(options opts){
 
 		sprintf(opts.inputFilename, "%05d.jpg", myNum);
 
+		printf("Filename = %s\n", opts.inputFilename);
+
 		readImage(opts, &simInfo[myNum]);
 
 		simInfo[myNum].porosity = calcPorosity(simInfo[myNum].target_data, simInfo[myNum].Width, simInfo[myNum].Height);
@@ -1157,6 +1159,8 @@ int BatchSim(options opts){
 		free(temp_TMap);
 		free(K);
 	}
+
+	outputBatch(opts, simInfo);
 
 	free(simInfo);
 
